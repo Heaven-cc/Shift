@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'feature_hub.dart';
 
 void main() => runApp(const ShiftApp());
 
@@ -174,6 +175,7 @@ class _ShiftHomeState extends State<ShiftHome> {
       SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Dark glass theme'),value:widget.dark,onChanged:(_)=>widget.onTheme()),
       const Divider(),
       const Text('Social accounts',style:TextStyle(fontSize:17,fontWeight:FontWeight.w800)),
+      OutlinedButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const ShiftFeatureHub())),icon:const Icon(Icons.tune),label:const Text('Open workspace tools')),
       ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.camera_alt_outlined),title:const Text('Instagram'),subtitle:const Text('Not connected'),trailing:const Icon(Icons.add),onTap:()=>message('Instagram OAuth is not configured.')),
       ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.people_outline),title:const Text('Facebook'),subtitle:const Text('Not connected'),trailing:const Icon(Icons.add),onTap:()=>message('Facebook OAuth is not configured.')),
       const Divider(),
@@ -189,7 +191,7 @@ class _ShiftHomeState extends State<ShiftHome> {
       appBar:AppBar(toolbarHeight:68,title:Row(children:[
         Container(width:36,height:36,alignment:Alignment.center,decoration:BoxDecoration(color:widget.dark?Colors.white:Colors.black,borderRadius:BorderRadius.circular(12)),child:Text('S',style:TextStyle(color:widget.dark?Colors.black:Colors.white,fontWeight:FontWeight.w900,fontSize:24))),
         const SizedBox(width:10),const Text('SHIFT',style:TextStyle(fontWeight:FontWeight.w900,letterSpacing:-1.5)),
-      ]),actions:[IconButton(onPressed:widget.onTheme,icon:Icon(widget.dark?Icons.light_mode_outlined:Icons.dark_mode_outlined)),IconButton(onPressed:()=>message('Notifications are not connected.'),icon:const Icon(Icons.notifications_none)),const SizedBox(width:10)]),
+      ]),actions:[IconButton(tooltip:'Workspace tools',onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const ShiftFeatureHub())),icon:const Icon(Icons.tune)),IconButton(onPressed:widget.onTheme,icon:Icon(widget.dark?Icons.light_mode_outlined:Icons.dark_mode_outlined)),IconButton(onPressed:()=>message('Notifications are not connected.'),icon:const Icon(Icons.notifications_none)),const SizedBox(width:10)]),
       body:SafeArea(child:ListView(padding:const EdgeInsets.fromLTRB(18,20,18,110),children:[views[selected]()])),
       bottomNavigationBar:NavigationBar(
         selectedIndex:selected,
