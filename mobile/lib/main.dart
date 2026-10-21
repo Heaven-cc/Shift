@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'feature_hub.dart';
+import 'welcome.dart';
 
 void main() => runApp(const ShiftApp());
 
@@ -11,6 +12,7 @@ class ShiftApp extends StatefulWidget {
 }
 class _ShiftAppState extends State<ShiftApp> {
   bool dark = false;
+  bool onboarded = false;
   @override
   Widget build(BuildContext context) {
     final theme = ThemeData(
@@ -26,7 +28,7 @@ class _ShiftAppState extends State<ShiftApp> {
       debugShowCheckedModeBanner: false,
       title: 'SHIFT',
       theme: theme,
-      home: ShiftHome(dark: dark, onTheme: () => setState(() => dark = !dark)),
+      home: onboarded ? ShiftHome(dark: dark, onTheme: () => setState(() => dark = !dark)) : ShiftWelcome(onContinue: () => setState(() => onboarded = true)),
     );
   }
 }
@@ -131,7 +133,7 @@ class _ShiftHomeState extends State<ShiftHome> {
       const SizedBox(height:14),
       TextField(controller:caption,maxLines:5,decoration:const InputDecoration(labelText:'Caption',hintText:'Write your caption...',border:OutlineInputBorder())),
       const SizedBox(height:14),
-      DropdownButtonFormField<String>(initialValue:platform,decoration:const InputDecoration(labelText:'Platform',border:OutlineInputBorder()),items:['Instagram','Facebook','X'].map((s)=>DropdownMenuItem(value:s,child:Text(s))).toList(),onChanged:(v)=>setState(()=>platform=v??platform)),
+      DropdownButtonFormField<String>(value:platform,decoration:const InputDecoration(labelText:'Platform',border:OutlineInputBorder()),items:['Instagram','Facebook','X'].map((s)=>DropdownMenuItem(value:s,child:Text(s))).toList(),onChanged:(v)=>setState(()=>platform=v??platform)),
       const SizedBox(height:16),
       Wrap(spacing:9,runSpacing:9,children:[
         action('Save draft',(){
