@@ -1,16 +1,23 @@
-# SHIFT
+# SHIFT — Native Flutter App
 
-AI-first social media manager — frontend prototype.
+SHIFT is a native-first Android/iOS social media manager. The retired Next.js web prototype is not the product.
 
-## Stack
-Next.js App Router, React, TypeScript, Tailwind CSS, Lucide icons.
+## Mobile frontend
+- `mobile/lib/main.dart` — mobile dashboard, Discover, Create, Calendar, Analytics and Settings
+- `mobile/lib/welcome.dart` — onboarding preview
+- `mobile/lib/feature_hub.dart` — approvals, social accounts, brand profile, automation controls and notifications
+- `mobile/lib/shift_models.dart` — typed content and workspace models
+- `mobile/lib/shift_repository.dart` — data repository contract and in-memory demo implementation
+- `mobile/lib/ui_components.dart` — reusable glass UI components
 
-## Run
-npm install
-npm run dev
+## Status
+This repository contains Flutter application source and configuration. Android/iOS platform runners still need to be generated with Flutter tooling. It has not been compiled or tested in this session. The UI currently uses demo data and local session state, not real accounts or live publishing.
 
-## Scope
-Frontend-only interactive prototype with sample data and local UI state. No Supabase, OAuth, research APIs, AI generation, real scheduling or publishing are connected. Buttons that require backend services are marked as demo or unavailable. The theme supports light and dark glass UI. Do not enter real social credentials into this prototype.
+## Preparing native builds
+Run `flutter create . --platforms=android,ios` from the `mobile` directory with a Flutter SDK installed, followed by `flutter pub get` and `flutter run`. Building iOS requires supported Apple build tooling.
 
-## Next steps
-Connect SHIFT's dedicated Supabase project, workspace auth, research sources, AI adapters and approved social platform APIs. Keep secrets on the server.
+## Cloud architecture
+The eventual always-on research and publishing workers will run independently of the phone, with dedicated SHIFT Supabase services. No TREXVEN infrastructure is shared.
+
+## Safety
+Do not use production social credentials in the demo. No real posting, AI generation or OAuth is currently implemented.
