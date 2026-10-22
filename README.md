@@ -1,23 +1,35 @@
-# SHIFT — Native Flutter App
+# SHIFT
+Native Flutter Android/iOS social media workspace with a premium monochrome interface.
 
-SHIFT is a native-first Android/iOS social media manager. The retired Next.js web prototype is not the product.
+## Scope
+This implementation is **frontend only**. No Supabase project, database, cloud function, AI provider, social connection, push service or publishing worker is configured or deployed. TREXVEN has not been touched.
 
-## Mobile frontend
-- `mobile/lib/main.dart` — mobile dashboard, Discover, Create, Calendar, Analytics and Settings
-- `mobile/lib/welcome.dart` — onboarding preview
-- `mobile/lib/feature_hub.dart` — approvals, social accounts, brand profile, automation controls and notifications
-- `mobile/lib/shift_models.dart` — typed content and workspace models
-- `mobile/lib/shift_repository.dart` — data repository contract and in-memory demo implementation
-- `mobile/lib/ui_components.dart` — reusable glass UI components
+The existing mobile directory is retained. The unused Next.js declaration and superseded demonstration screens are removed. There is no web application.
 
-## Status
-This repository contains Flutter application source and configuration. Android/iOS platform runners still need to be generated with Flutter tooling. It has not been compiled or tested in this session. The UI currently uses demo data and local session state, not real accounts or live publishing.
+## Frontend
+- Home, Discover, Create, Calendar and Insights in a state-preserving five-tab shell.
+- Light, dark and system themes; shared design tokens and restrained glass panels.
+- Welcome, Register, sign-in, reset and verification forms with honest unavailable-service states.
+- Explicit local-workspace access and six-step setup, restored at launch.
+- Persistent local draft editor, image selection, versions, review queue, local planning and caption export.
+- Source bookmarks, public source links and source-to-editor workflow, clearly marked unverified.
+- Calendar month, week, day and list views with local planning dates.
+- Profile, brand, avatar/logo, AI preferences, accounts, automation boundaries, appearance, notification preferences, local activity, privacy controls and help.
+- Native Android and iOS projects with launch surfaces and monochrome app icons.
 
-## Preparing native builds
-Run `flutter create . --platforms=android,ios` from the `mobile` directory with a Flutter SDK installed, followed by `flutter pub get` and `flutter run`. Building iOS requires supported Apple build tooling.
+Production-only operations report the missing service. They never fabricate account authentication, research, analytics, approval authority, schedules or publishing.
 
-## Cloud architecture
-The eventual always-on research and publishing workers will run independently of the phone, with dedicated SHIFT Supabase services. No TREXVEN infrastructure is shared.
+## Run
+Use an existing Flutter SDK (Flutter 3.29 or newer; SDK/plugin compatibility must be checked on the chosen release), Android SDK and JDK 17:
+```sh
+cd mobile
+flutter pub get
+flutter run
+```
 
-## Safety
-Do not use production social credentials in the demo. No real posting, AI generation or OAuth is currently implemented.
+iOS additionally requires macOS, Xcode and CocoaPods. Run flutter pub get, then pod install in mobile/ios and open Runner.xcworkspace. Choose a signing team and confirm the bundle identifier. Signing credentials are not included.
+
+## Verification
+Flutter and Dart were unavailable during implementation. No analyzer, Flutter tests, native builds, device run, accessibility run or visual runtime review was performed. Native XML, plist and YAML were parsed and local import paths were checked. These source checks do not establish compilation or runtime correctness.
+
+See [frontend handoff](docs/FRONTEND_HANDOFF.md) for the screen/action inventory and remaining work.

@@ -1,6 +1,10 @@
-node_modules
-.next
-.env*
-!.env.example
-*.tsbuildinfo
 .DS_Store
+.env
+.env.*
+!.env.example
+**/build/
+**/.dart_tool/
+**/.flutter-plugins*
+**/Pods/
+**/.idea/
+**/*.iml

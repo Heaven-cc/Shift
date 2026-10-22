@@ -1,10 +1,6 @@
-# SHIFT Mobile
+# SHIFT mobile
+Native Flutter source in this existing directory; no duplicate apps/mobile copy is introduced.
 
-Flutter-native Android/iOS frontend. The mobile app is the user interface; 24/7 research and publishing will run in cloud workers with a dedicated SHIFT Supabase backend.
+Start with the repository README and docs/FRONTEND_HANDOFF.md. Open the app and choose **Open local workspace** while cloud authentication is unconnected. Registration and sign-in forms accurately report that authentication is unavailable.
 
-## Start
-1. Install Flutter.
-2. From this folder run `flutter create . --platforms=android,ios` to generate platform runners (requires the relevant platform tooling).
-3. Run `flutter pub get`, then `flutter run`.
-
-This commit includes Flutter application source and project configuration, not generated Android/iOS runner directories. No cloud processing, authentication, AI or social publishing is connected. The existing Next.js prototype remains in the repository for now, unchanged.
+Android and iOS runners are checked in. Flutter tooling generates machine-specific files at build time. No SDK was downloaded, no app binary was produced, and no runtime result is claimed for this implementation.
