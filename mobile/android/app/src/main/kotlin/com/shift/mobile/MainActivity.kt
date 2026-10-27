@@ -1,3 +1,3 @@
-package com.odt.shift
+package com.shift.mobile
 import io.flutter.embedding.android.FlutterActivity
 class MainActivity: FlutterActivity()

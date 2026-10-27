@@ -4,7 +4,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 android {
-    namespace = "com.odt.shift"
+    namespace = "com.shift.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
     compileOptions {
@@ -13,7 +13,7 @@ android {
     }
     kotlinOptions { jvmTarget = JavaVersion.VERSION_17.toString() }
     defaultConfig {
-        applicationId = "com.odt.shift"
+        applicationId = "com.shift.mobile"
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

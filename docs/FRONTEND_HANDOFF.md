@@ -35,7 +35,7 @@ Local planning dates preserve a UTC instant plus a device timezone label. Profil
 No production seed data exists. Local review states must never be imported as trusted cloud approvals.
 
 ## Native configuration
-- Provisional application/bundle ID: com.odt.shift. Confirm ownership before store release.
+- Provisional application/bundle ID: com.shift.mobile. Confirm ownership before store release.
 - Android: Kotlin FlutterActivity, Gradle Kotlin DSL, official Gradle wrapper, Android photo picker through image_picker, Internet permission, backups disabled, monochrome vector icon/launch surface.
 - iOS: Swift FlutterAppDelegate, Xcode project/workspace/scheme, CocoaPods hooks, iOS 15 target, photo permission description, icon catalog and launch storyboard.
 - iOS project scaffolding derives from Flutter's BSD-licensed templates; Gradle wrapper retains its upstream license. See docs/third_party.
