@@ -51,7 +51,7 @@ class Workspace extends ChangeNotifier {
 
   Map<String, dynamic> _json() => {'theme': theme.name, 'entered': entered, 'onboardingComplete': onboardingComplete, 'profile': profile, 'brand': brand, 'preferences': preferences, 'interests': interests.toList(), 'notificationPreferences': notificationPreferences, 'posts': posts.map((p) => p.toJson()).toList(), 'bookmarks': bookmarks.map((p) => p.toJson()).toList(), 'activity': activity};
   Future<bool> persist() async {
-    if (storageError != null) { notifyListeners(); return false; }
+    if (storageError != null && !cloudAuthenticated) { notifyListeners(); return false; }
     if (cloudAuthenticated) {
       // Cloud account data must not replace the separate device-only workspace.
       return saveCloudSettings();
