@@ -92,15 +92,19 @@ class Workspace extends ChangeNotifier {
     final cloudPosts = await ShiftCloud.loadPosts(wid);
     final loaded = <LocalPost>[];
     for (final p in cloudPosts) {
-      final versions = (p['versions'] as List).map((raw) {
+      final versions = <ContentVersion>[];
+      for (final raw in (p['versions'] as List)) {
         final v = raw as Map<String,dynamic>;
-        return ContentVersion(caption:v['caption'] as String,
+        String? localImage;
+        try { localImage=await ShiftCloud.downloadImage(v['media_path'] as String?); }
+        catch (_) { localImage=null; }
+        versions.add(ContentVersion(caption:v['caption'] as String,
           createdAt:DateTime.parse(v['created_at'] as String),
-          platform:v['platform'] as String, headline:v['headline'] as String? ?? '',
+          imagePath:localImage,platform:v['platform'] as String, headline:v['headline'] as String? ?? '',
           hashtags:v['hashtags'] as String? ?? '',
           metadata:{for(final e in (v['details'] as Map? ?? {}).entries)
-            if(e.value is String) e.key.toString():e.value as String});
-      }).toList();
+            if(e.value is String) e.key.toString():e.value as String}));
+      }
       if (versions.isEmpty) continue;
       final status = switch(p['status'] as String) {
         'pending_approval' => PostStatus.pendingApproval,
@@ -119,7 +123,14 @@ class Workspace extends ChangeNotifier {
     }
     // Server is authoritative in cloud mode; do not overwrite device-only drafts.
     posts = loaded;
-    bookmarks = [];
+    final sourceRows=await ShiftCloud.loadBookmarks(wid);
+    bookmarks=sourceRows.map((b)=>ResearchBookmark(
+      id:b['client_id'] as String? ?? b['id'] as String,
+      topic:b['topic'] as String,url:b['url'] as String,
+      notes:b['notes'] as String,publisher:b['publisher'] as String? ?? '',
+      savedAt:DateTime.parse(b['saved_at'] as String),
+      publishedAt:b['published_at']==null?null:DateTime.parse(b['published_at'] as String),
+    )).toList();
     cloudWorkspaceId = wid;
     cloudMode = true;
     entered = true;
@@ -163,13 +174,60 @@ class Workspace extends ChangeNotifier {
         'planning_timezone':post.timezone,'note':post.note,
       },post.versions.map((v) => <String,dynamic>{
         'caption':v.caption,'platform':v.platform,'headline':v.headline,
-        'hashtags':v.hashtags,'details':v.metadata,
+        'hashtags':v.hashtags,'details':v.metadata,'local_image_path':v.imagePath,
       }).toList());
       cloudError=null; return true;
     } catch(e) {
       cloudError='Draft saved on this device only. Cloud sync failed: $e';
       notifyListeners(); return false;
     }
+  }
+
+
+  Future<bool> addBookmark(ResearchBookmark b) async {
+    if(cloudAuthenticated) {
+      try {
+        await ShiftCloud.saveBookmark(cloudWorkspaceId!,{
+          'client_id':b.id,'topic':b.topic,'url':b.url,
+          'notes':b.notes,'publisher':b.publisher,
+          'published_at':b.publishedAt?.toUtc().toIso8601String(),
+        });
+        bookmarks.insert(0,b);notifyListeners();return true;
+      } catch(e) {cloudError='Could not save cloud source: $e';notifyListeners();return false;}
+    }
+    bookmarks.insert(0,b);return persist();
+  }
+
+  Future<bool> deleteBookmark(String id) async {
+    if(cloudAuthenticated) {
+      try {await ShiftCloud.deleteBookmark(cloudWorkspaceId!,id);}
+      catch(e){cloudError='Could not remove cloud source: $e';notifyListeners();return false;}
+    }
+    bookmarks.removeWhere((b)=>b.id==id);
+    if(cloudAuthenticated){notifyListeners();return true;}
+    return persist();
+  }
+
+  Future<bool> importLocalDrafts() async {
+    if(!cloudAuthenticated) return false;
+    try {
+      final saved=await SharedPreferences.getInstance();
+      final raw=saved.getString('shift.workspace.v2');
+      if(raw==null)return true;
+      final json=jsonDecode(raw) as Map<String,dynamic>;
+      final local=(json['posts'] as List? ?? []).map((e)=>LocalPost.fromJson(Map<String,dynamic>.from(e as Map))).toList();
+      for(final p in local) {
+        // Local approvals and statuses never transfer; all imports are drafts.
+        await ShiftCloud.savePost(cloudWorkspaceId!,{
+          'client_id':p.id,'title':p.title,
+          'planned_at':null,'planning_timezone':p.timezone,'note':p.note,
+        },p.versions.map((v)=><String,dynamic>{
+          'caption':v.caption,'platform':v.platform,'headline':v.headline,
+          'hashtags':v.hashtags,'details':v.metadata,
+        }).toList());
+      }
+      await openCloud();return true;
+    } catch(e){cloudError='Import stopped; original local data is preserved: $e';notifyListeners();return false;}
   }
 
   Future<bool> retrySave() { storageError = null; return persist(); }
@@ -194,7 +252,13 @@ class Workspace extends ChangeNotifier {
     return persist();
   }
   Future<bool> removePost(String id) {
-    if (cloudAuthenticated) { cloudError = 'Cloud deletion is not yet enabled. Draft retained.'; notifyListeners(); return false; }
+    if (cloudAuthenticated) {
+      try {
+        await ShiftCloud.deleteDraft(cloudWorkspaceId!,id);
+        posts.removeWhere((p)=>p.id==id);
+        notifyListeners();return true;
+      } catch(e){cloudError='Could not delete cloud draft: $e';notifyListeners();return false;}
+    }
     posts.removeWhere((p) => p.id == id);
     record('Local draft deleted', '/drafts');
     return persist();
