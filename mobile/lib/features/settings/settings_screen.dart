@@ -52,6 +52,16 @@ class SettingsScreen extends ConsumerWidget {
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Session'), subtitle: Text(w.cloudAuthenticated ? 'Signed in: ${ShiftCloud.user?.email ?? 'SHIFT account'}' : 'Local workspace only')),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Connected app permissions'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
         const Section('Data controls'),
+        if(w.cloudAuthenticated) OutlinedButton(
+          onPressed:() async {
+            if(!await confirm(context,'Import local text drafts?',
+              'Copy locally saved draft text and version history into this SHIFT account. Local approvals do not transfer. Images and existing local files stay on this device. Your original local workspace will be preserved.',
+              action:'Import drafts'))return;
+            final ok=await w.importLocalDrafts();
+            if(context.mounted)toast(context,ok?'Local draft text imported.':'Import failed or incomplete. Local originals remain unchanged.');
+          },
+          child:const Text('Import device drafts to SHIFT Cloud'),
+        ),
         OutlinedButton(onPressed: () => unavailable(context, 'Cloud data export'), child: const Text('Export account data')),
         const SizedBox(height: 12),
         OutlinedButton(onPressed: () async {
