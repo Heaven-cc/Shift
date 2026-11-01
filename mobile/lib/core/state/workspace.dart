@@ -103,8 +103,8 @@ class Workspace extends ChangeNotifier {
           imagePath:localImage,platform:v['platform'] as String, headline:v['headline'] as String? ?? '',
           hashtags:v['hashtags'] as String? ?? '',
           metadata:{for(final e in (v['details'] as Map? ?? {}).entries)
-            if(e.value is String) e.key.toString():e.value as String});
-      }).toList();
+            if(e.value is String) e.key.toString():e.value as String}));
+      }
       if (versions.isEmpty) continue;
       final status = switch(p['status'] as String) {
         'pending_approval' => PostStatus.pendingApproval,
