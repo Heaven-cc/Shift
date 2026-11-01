@@ -9,7 +9,7 @@ class ShiftCloud {
 
   static Future<void> initialize() async {
     if (!configured) return;
-    await Supabase.initialize(url: url, anonKey: publishableKey);
+    await Supabase.initialize(url: url, publishableKey: publishableKey);
   }
 
   static Future<String> workspaceId() async {
