@@ -90,7 +90,7 @@ class ShiftCloud {
     } else {
       id=existing.first['id'] as String;
       remoteVersion=existing.first['current_version'] as int;
-      if (existing.first['status'] != 'draft') {
+      if (existing.first['status'] != 'draft' && versions.length <= remoteVersion) {
         throw StateError('A cloud review is active. Change the cloud post using a reviewed workflow.');
       }
     }
