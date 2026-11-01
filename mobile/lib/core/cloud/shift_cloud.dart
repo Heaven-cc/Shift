@@ -66,6 +66,39 @@ class ShiftCloud {
     return {'workspace': data[0], 'profile': data[1], 'brand': data[2], 'preferences': data[3]};
   }
 
+
+  static Future<List<Map<String,dynamic>>> loadBookmarks(String wid) async {
+    final rows = await client.from('shift_research_bookmarks').select()
+      .eq('workspace_id',wid).order('saved_at',ascending:false);
+    return List<Map<String,dynamic>>.from(rows);
+  }
+
+  static Future<void> saveBookmark(String wid, Map<String,dynamic> entry) async {
+    final existing=await client.from('shift_research_bookmarks').select('id')
+      .eq('workspace_id',wid).eq('client_id',entry['client_id'] as String).limit(1);
+    if(existing.isEmpty) {
+      await client.from('shift_research_bookmarks').insert({...entry,'workspace_id':wid});
+    } else {
+      await client.from('shift_research_bookmarks').update({
+        'topic':entry['topic'],'url':entry['url'],'notes':entry['notes'],
+        'publisher':entry['publisher'],'published_at':entry['published_at'],
+      }).eq('id',existing.first['id'] as String);
+    }
+  }
+
+  static Future<void> deleteBookmark(String wid,String clientId) async {
+    await client.from('shift_research_bookmarks').delete()
+      .eq('workspace_id',wid).eq('client_id',clientId);
+  }
+
+  static Future<void> deleteDraft(String wid,String clientId) async {
+    final rows=await client.from('shift_content_posts').select('id,status')
+      .eq('workspace_id',wid).eq('client_id',clientId).limit(1);
+    if(rows.isEmpty) throw StateError('Cloud draft not found');
+    if(rows.first['status']!='draft') throw StateError('Only unreviewed cloud drafts can be deleted');
+    await client.from('shift_content_posts').delete().eq('id',rows.first['id'] as String).eq('status','draft');
+  }
+
   static Future<List<Map<String,dynamic>>> loadPosts(String wid) async {
     final rows = await client.from('shift_content_posts').select().eq('workspace_id',wid).order('updated_at',ascending:false);
     final out = <Map<String,dynamic>>[];
