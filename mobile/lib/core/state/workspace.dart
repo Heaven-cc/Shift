@@ -92,11 +92,15 @@ class Workspace extends ChangeNotifier {
     final cloudPosts = await ShiftCloud.loadPosts(wid);
     final loaded = <LocalPost>[];
     for (final p in cloudPosts) {
-      final versions = (p['versions'] as List).map((raw) {
+      final versions = <ContentVersion>[];
+      for (final raw in (p['versions'] as List)) {
         final v = raw as Map<String,dynamic>;
-        return ContentVersion(caption:v['caption'] as String,
+        String? localImage;
+        try { localImage=await ShiftCloud.downloadImage(v['media_path'] as String?); }
+        catch (_) { localImage=null; }
+        versions.add(ContentVersion(caption:v['caption'] as String,
           createdAt:DateTime.parse(v['created_at'] as String),
-          platform:v['platform'] as String, headline:v['headline'] as String? ?? '',
+          imagePath:localImage,platform:v['platform'] as String, headline:v['headline'] as String? ?? '',
           hashtags:v['hashtags'] as String? ?? '',
           metadata:{for(final e in (v['details'] as Map? ?? {}).entries)
             if(e.value is String) e.key.toString():e.value as String});
@@ -170,7 +174,7 @@ class Workspace extends ChangeNotifier {
         'planning_timezone':post.timezone,'note':post.note,
       },post.versions.map((v) => <String,dynamic>{
         'caption':v.caption,'platform':v.platform,'headline':v.headline,
-        'hashtags':v.hashtags,'details':v.metadata,
+        'hashtags':v.hashtags,'details':v.metadata,'local_image_path':v.imagePath,
       }).toList());
       cloudError=null; return true;
     } catch(e) {
