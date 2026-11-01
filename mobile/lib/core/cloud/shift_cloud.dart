@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ShiftCloud {
@@ -99,6 +101,38 @@ class ShiftCloud {
     await client.from('shift_content_posts').delete().eq('id',rows.first['id'] as String).eq('status','draft');
   }
 
+
+  static Future<String?> uploadImage(String wid,String? imagePath) async {
+    if(imagePath==null)return null;
+    if(imagePath.startsWith('cloud:'))return imagePath.substring(6);
+    final userId=user?.id;
+    if(userId==null)throw StateError('Sign in to upload images');
+    final file=File(imagePath);
+    if(!await file.exists())throw StateError('Selected image is no longer on this device');
+    final size=await file.length();
+    if(size<=0 || size>10*1024*1024)throw StateError('Image must be under 10 MB');
+    // Images selected by SHIFT's picker are normalized as JPEG.
+    final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.jpg';
+    await client.storage.from('shift-media').upload(path,file,
+      fileOptions:const FileOptions(contentType:'image/jpeg',upsert:false));
+    await client.from('shift_media_assets').insert({
+      'workspace_id':wid,'storage_path':path,'mime_type':'image/jpeg','size_bytes':size,
+    });
+    return path;
+  }
+
+  static Future<String?> downloadImage(String? path) async {
+    if(path==null)return null;
+    final bytes=await client.storage.from('shift-media').download(path);
+    final dir=await getApplicationDocumentsDirectory();
+    final folder=Directory('${dir.path}/shift_cloud_media');
+    await folder.create(recursive:true);
+    final safe=path.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'),'_');
+    final file=File('${folder.path}/$safe.jpg');
+    await file.writeAsBytes(bytes,flush:true);
+    return file.path;
+  }
+
   static Future<List<Map<String,dynamic>>> loadPosts(String wid) async {
     final rows = await client.from('shift_content_posts').select().eq('workspace_id',wid).order('updated_at',ascending:false);
     final out = <Map<String,dynamic>>[];
@@ -128,7 +162,12 @@ class ShiftCloud {
       }
     }
     for (var i=remoteVersion;i<versions.length;i++) {
-      await client.from('shift_content_versions').insert({...versions[i],'post_id':id,'version_number':i+1});
+      final draft=Map<String,dynamic>.from(versions[i]);
+      final imagePath=draft.remove('local_image_path') as String?;
+      final storagePath=await uploadImage(wid,imagePath);
+      await client.from('shift_content_versions').insert({
+        ...draft,'media_path':storagePath,'post_id':id,'version_number':i+1,
+      });
     }
     await client.from('shift_content_posts').update({
       'title':p['title'], 'planned_at':p['planned_at'],
