@@ -53,7 +53,7 @@ Future<void> addSource(BuildContext context, WidgetRef ref) async {
     final item = ResearchBookmark(id: DateTime.now().microsecondsSinceEpoch.toString(), topic: title.text.trim(), url: url.text.trim(), notes: notes.text.trim(), publisher: publisher.text.trim(), savedAt: DateTime.now());
     final ok = await w.addBookmark(item);
     if(ok)w.record('Source bookmarked', '/discover');
-    if (context.mounted) toast(context, ok ? w.cloudAuthenticated ? 'Source saved to SHIFT Cloud.' : 'Source saved on this device.' : 'Source is in memory only. Storage failed.');
+    if (context.mounted) toast(context, ok ? (w.cloudAuthenticated ? 'Source saved to SHIFT Cloud.' : 'Source saved on this device.') : 'Source could not be saved; retry.');
   }
   // Dialog route teardown finishes before controllers are disposed.
   await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -82,7 +82,7 @@ class ResearchDetailScreen extends ConsumerWidget {
       const SizedBox(height: 20),
       FilledButton(onPressed: () => context.push('/compose?source=$id'), child: const Text('Create a post from your notes')),
       const SizedBox(height: 8), OutlinedButton(onPressed: () => unavailable(context, 'AI research brief'), child: const Text('Generate research brief')),
-      TextButton(onPressed: () async { if (await confirm(context, 'Remove this source?', 'The local bookmark and notes will be removed.', action: 'Remove')) { final ok = await w.deleteBookmark(id); if (ok && context.mounted) context.pop(); } }, child: const Text('Remove source')),
+      TextButton(onPressed: () async { if (await confirm(context, 'Remove this source?', 'The local bookmark and notes will be removed.', action: 'Remove')) { final ok = await w.deleteBookmark(id); if (ok && context.mounted) context.pop(); if (!ok && context.mounted) toast(context,'Could not remove source.'); } }, child: const Text('Remove source')),
     ]));
   }
 }
