@@ -122,7 +122,7 @@ class PostScreen extends ConsumerWidget {
       Wrap(spacing: 8, children: ['More like this', 'Not relevant', 'Change tone'].map((s) => ActionChip(label: Text(s), onPressed: () async { w.preferences['feedback:$id'] = s; final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'Feedback saved locally. AI learning is not connected.' : 'Could not persist feedback.'); })).toList()),
       const SizedBox(height: 24),
       if (p.plannedAt != null) OutlinedButton(onPressed: () async { if (await confirm(context, 'Cancel local plan?', 'The draft will remain available.', action: 'Cancel plan')) await w.changePost(p.copyWith(clearPlan: true, status: PostStatus.draft), 'Local planning date removed'); }, child: const Text('Cancel local plan')),
-      TextButton(onPressed: () async { if (await confirm(context, 'Delete this draft?', 'All local text versions will be removed. Uploaded files are retained until local data is cleared.', action: 'Delete')) { await w.removePost(id); if (context.mounted) context.pop(); } }, child: const Text('Delete draft')),
+      TextButton(onPressed: () async { if (await confirm(context, 'Delete this draft?', 'All draft versions will be deleted from the current workspace. This cannot be undone. Device image files are retained.', action: 'Delete')) { final ok=await w.removePost(id); if (ok && context.mounted) context.pop(); if (!ok && context.mounted) toast(context,'Could not delete draft.'); } }, child: const Text('Delete draft')),
     ]));
   }
 }
