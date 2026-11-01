@@ -10,7 +10,7 @@ Future<void> main() async {
   await workspace.restore();
   await ShiftCloud.initialize();
   if (ShiftCloud.user != null) {
-    try { await workspace.openCloud(); } catch (e) { workspace.cloudError = 'Cloud restore failed: $e'; }
+    try { await workspace.openCloud(); } catch (e) { workspace.cloudError = 'Cloud restore failed: $e'; workspace.entered = false; }
   }
   runApp(ProviderScope(overrides: [
     workspaceProvider.overrideWith((ref) => workspace),
