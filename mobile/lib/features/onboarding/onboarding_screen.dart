@@ -31,7 +31,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
     w.brand = {...w.brand, for (final e in fields.entries) e.key: e.value.text.trim()};
     w.interests = {...interests};
     w.preferences.addAll({'purpose': purpose, 'mode': mode});
-    if (step == 5) { w.onboardingComplete = true; w.record('Local workspace configured', '/settings'); }
+    if (step == 5) { w.onboardingComplete = true; w.record('Workspace configured', '/settings'); }
     setState(() => saving = true);
     final ok = await w.persist();
     if (!mounted) return;
@@ -42,7 +42,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
     const titles = ['Make it yours.', 'What moves you?', 'Define your voice.', 'Connect your presence.', 'Stay in control.', 'Ready for your next chapter.'];
     return Scaffold(appBar: AppBar(title: const Text('Set up SHIFT'), leading: step > 0 ? IconButton(tooltip: 'Previous step', onPressed: () => setState(() => step--), icon: const Icon(Icons.arrow_back)) : null), body: PageBody(children: [
       LinearProgressIndicator(value: (step + 1) / 6), const SizedBox(height: 20),
-      Heading(titles[step], 'Step ${step + 1} of 6 • Local workspace setup'),
+      Heading(titles[step], 'Step ${step + 1} of 6 • SHIFT setup'),
       Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         if (step == 0) ...['Personal creator', 'Influencer', 'Business / brand', 'Freelance / client work'].map((p) => RadioListTile<String>(value: p, groupValue: purpose, title: Text(p), onChanged: (v) => setState(() => purpose = v!))),
         if (step == 1) ...[
@@ -65,7 +65,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
             Text(fields['name']!.text, style: Theme.of(context).textTheme.headlineSmall), const SizedBox(height: 12),
             Text('$purpose • $mode'), const SizedBox(height: 8), Text(interests.join(' • ')),
             const SizedBox(height: 8), Text('Weekly target: ${fields['weeklyTarget']!.text}'),
-            const SizedBox(height: 12), const Text('Connected accounts: none\nAutomation: inactive\nStorage: this device only'),
+            const SizedBox(height: 12), const Text('Connected accounts: none\nAutomation: inactive\nStorage: account settings sync when signed in; device media stays local'),
           ])),
           CheckboxListTile(contentPadding: EdgeInsets.zero, title: const Text('Confirm these preferences for my local workspace. This does not authorize publishing.'), value: confirmed, onChanged: (v) => setState(() => confirmed = v ?? false)),
         ],
