@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -46,9 +47,9 @@ class SettingsScreen extends ConsumerWidget {
       ],
       if (section == 'privacy') ...[
         const Heading('You stay in control.', 'Your local workspace and account data.'),
-        const Panel(child: Text('This frontend has no authenticated session, cloud account, AI keys or social tokens. Local drafts, uploaded images and preferences stay in application storage on this device. They are not a cloud backup.')),
+        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, and newly saved text drafts sync to Supabase. Device-only drafts are not imported automatically; image files stay on this device.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
         const Section('Sessions & permissions'),
-        ListTile(contentPadding: EdgeInsets.zero, title: const Text('Manage signed-in sessions'), subtitle: const Text('No account session exists'), onTap: () => unavailable(context, 'Session management')),
+        ListTile(contentPadding: EdgeInsets.zero, title: const Text('Session'), subtitle: Text(w.cloudAuthenticated ? 'Signed in: ${ShiftCloud.user?.email ?? 'SHIFT account'}' : 'Local workspace only')),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Connected app permissions'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
         const Section('Data controls'),
         OutlinedButton(onPressed: () => unavailable(context, 'Cloud data export'), child: const Text('Export account data')),
@@ -63,7 +64,7 @@ class SettingsScreen extends ConsumerWidget {
         }, child: const Text('Clear local workspace')),
         const SizedBox(height: 12),
         TextButton(onPressed: () => unavailable(context, 'Cloud account deletion'), child: const Text('Delete SHIFT account')),
-        TextButton(onPressed: () async { w.entered = false; await w.persist(); }, child: const Text('Leave local workspace')),
+        TextButton(onPressed: () async { if (w.cloudAuthenticated) { await w.leaveCloud(); } else { w.entered = false; await w.persist(); } }, child: Text(w.cloudAuthenticated ? 'Sign out of SHIFT' : 'Leave local workspace')),
       ],
       if (section == 'help') ...[
         const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),

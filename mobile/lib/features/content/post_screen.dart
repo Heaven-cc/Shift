@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class PostTile extends StatelessWidget {
@@ -46,8 +47,35 @@ class PostScreen extends ConsumerWidget {
     if (matches.isEmpty) return Scaffold(appBar: AppBar(), body: const Empty('Draft not found', 'This local draft may have been deleted.'));
     final p = matches.first, v = p.current;
     Future<void> change(PostStatus s, String message) async {
-      final ok = await w.changePost(p.copyWith(status: s), message);
-      if (context.mounted) toast(context, ok ? message : 'Device storage failed. Changes are in memory.');
+      bool ok;
+      if (w.cloudAuthenticated) {
+        try {
+          final wid=w.cloudWorkspaceId!;
+          final rows=await ShiftCloud.client.from('shift_content_posts').select('id')
+              .eq('workspace_id',wid).eq('client_id',p.id).limit(1);
+          if (rows.isEmpty) throw StateError('Cloud post not found');
+          final postId=rows.first['id'] as String;
+          if (s == PostStatus.pendingApproval) {
+            await ShiftCloud.client.rpc('shift_submit_for_review',params:{'p_post_id':postId});
+          } else if (s == PostStatus.approved || s == PostStatus.draft) {
+            final reviews=await ShiftCloud.client.from('shift_approval_requests')
+              .select('id').eq('post_id',postId).eq('state','pending').limit(1);
+            if (reviews.isEmpty) throw StateError('No pending cloud review');
+            await ShiftCloud.client.rpc('shift_decide_review',params:{
+              'p_review_id': reviews.first['id'], 'p_approve':s==PostStatus.approved,
+              'p_comment':'Reviewed in SHIFT',
+            });
+          } else { throw StateError('Unsupported cloud status change'); }
+          await w.openCloud();
+          ok=true;
+        } catch(e) {
+          ok=false;
+          w.cloudError='Cloud review failed: $e';
+        }
+      } else {
+        ok = await w.changePost(p.copyWith(status: s), message);
+      }
+      if (context.mounted) toast(context, ok ? message : 'Review could not be saved. Please retry.');
     }
     return Scaffold(appBar: AppBar(title: const Text('Post details'), actions: [IconButton(tooltip: 'Edit draft', onPressed: () => context.push('/edit/$id'), icon: const Icon(Icons.edit_outlined))]), body: PageBody(children: [
       Heading(p.title, '${v.platform} • ${statusLabel(p.status)} • Version ${p.versions.length}'),
@@ -74,13 +102,13 @@ class PostScreen extends ConsumerWidget {
         OutlinedButton(onPressed: () => unavailable(context, 'Publishing'), child: const Text('Publish now')),
         OutlinedButton(onPressed: () async { await Clipboard.setData(ClipboardData(text: [v.headline, v.caption, v.hashtags].where((s) => s.isNotEmpty).join('\n\n'))); if (context.mounted) toast(context, 'Caption copied. Publish manually in your social app.'); }, child: const Text('Copy for manual export')),
       ]),
-      const Section('Local review'),
+      Section(w.cloudAuthenticated ? 'Cloud review' : 'Local review'),
       const Text('Review applies to this exact content version and preview platform. Real approvals also require connected destination accounts.'),
       const SizedBox(height: 12),
       Wrap(spacing: 8, runSpacing: 8, children: [
-        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Added to local review queue'), child: const Text('Submit for local review')),
+        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: const Text('Submit for local review')),
         if (p.status == PostStatus.pendingApproval) ...[
-          FilledButton(onPressed: () async { if (await confirm(context, 'Approve local version ${p.versions.length}?', 'Approve this content for your local plan. This does not authorize publishing to an account.', action: 'Approve locally')) await change(PostStatus.approved, 'Local version approved'); }, child: const Text('Approve locally')),
+          FilledButton(onPressed: () async { if (await confirm(context, 'Approve local version ${p.versions.length}?', 'Approve this content for your local plan. This does not authorize publishing to an account.', action: 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: const Text('Approve locally')),
           OutlinedButton(onPressed: () => change(PostStatus.draft, 'Returned to drafts'), child: const Text('Reject / return to draft')),
         ],
         OutlinedButton(onPressed: () => unavailable(context, 'AI regeneration'), child: const Text('Regenerate')),
@@ -88,13 +116,13 @@ class PostScreen extends ConsumerWidget {
       const Section('Version history'),
       ...p.versions.reversed.toList().asMap().entries.map((e) => ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Version ${p.versions.length - e.key}'), subtitle: Text(DateFormat.yMMMd().add_jm().format(e.value.createdAt)), children: [
         Padding(padding: const EdgeInsets.only(bottom: 12), child: SelectableText(e.value.caption)),
-        if (e.key != 0) TextButton(onPressed: () async { if (await confirm(context, 'Restore this version?', 'A new draft version will be created. Previous reviews will be cleared.', action: 'Restore')) { final old = e.value; await w.changePost(p.copyWith(status: PostStatus.draft, versions: [...p.versions, ContentVersion(caption: old.caption, createdAt: DateTime.now(), imagePath: old.imagePath, platform: old.platform, headline: old.headline, hashtags: old.hashtags, metadata: old.metadata)]), 'Earlier version restored for review'); } }, child: const Text('Restore as new draft version')),
+        if (e.key != 0 && !w.cloudAuthenticated) TextButton(onPressed: () async { if (await confirm(context, 'Restore this version?', 'A new draft version will be created. Previous reviews will be cleared.', action: 'Restore')) { final old = e.value; await w.changePost(p.copyWith(status: PostStatus.draft, versions: [...p.versions, ContentVersion(caption: old.caption, createdAt: DateTime.now(), imagePath: old.imagePath, platform: old.platform, headline: old.headline, hashtags: old.hashtags, metadata: old.metadata)]), 'Earlier version restored for review'); } }, child: const Text('Restore as new draft version')),
       ])),
       const Section('Content feedback'),
       Wrap(spacing: 8, children: ['More like this', 'Not relevant', 'Change tone'].map((s) => ActionChip(label: Text(s), onPressed: () async { w.preferences['feedback:$id'] = s; final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'Feedback saved locally. AI learning is not connected.' : 'Could not persist feedback.'); })).toList()),
       const SizedBox(height: 24),
       if (p.plannedAt != null) OutlinedButton(onPressed: () async { if (await confirm(context, 'Cancel local plan?', 'The draft will remain available.', action: 'Cancel plan')) await w.changePost(p.copyWith(clearPlan: true, status: PostStatus.draft), 'Local planning date removed'); }, child: const Text('Cancel local plan')),
-      TextButton(onPressed: () async { if (await confirm(context, 'Delete this draft?', 'All local text versions will be removed. Uploaded files are retained until local data is cleared.', action: 'Delete')) { await w.removePost(id); if (context.mounted) context.pop(); } }, child: const Text('Delete draft')),
+      TextButton(onPressed: w.cloudAuthenticated ? null : () async { if (await confirm(context, 'Delete this draft?', 'All local text versions will be removed. Uploaded files are retained until local data is cleared.', action: 'Delete')) { await w.removePost(id); if (context.mounted) context.pop(); } }, child: const Text('Delete draft')),
     ]));
   }
 }
