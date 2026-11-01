@@ -119,7 +119,14 @@ class Workspace extends ChangeNotifier {
     }
     // Server is authoritative in cloud mode; do not overwrite device-only drafts.
     posts = loaded;
-    bookmarks = [];
+    final sourceRows=await ShiftCloud.loadBookmarks(wid);
+    bookmarks=sourceRows.map((b)=>ResearchBookmark(
+      id:b['client_id'] as String? ?? b['id'] as String,
+      topic:b['topic'] as String,url:b['url'] as String,
+      notes:b['notes'] as String,publisher:b['publisher'] as String? ?? '',
+      savedAt:DateTime.parse(b['saved_at'] as String),
+      publishedAt:b['published_at']==null?null:DateTime.parse(b['published_at'] as String),
+    )).toList();
     cloudWorkspaceId = wid;
     cloudMode = true;
     entered = true;
@@ -172,6 +179,53 @@ class Workspace extends ChangeNotifier {
     }
   }
 
+
+  Future<bool> addBookmark(ResearchBookmark b) async {
+    if(cloudAuthenticated) {
+      try {
+        await ShiftCloud.saveBookmark(cloudWorkspaceId!,{
+          'client_id':b.id,'topic':b.topic,'url':b.url,
+          'notes':b.notes,'publisher':b.publisher,
+          'published_at':b.publishedAt?.toUtc().toIso8601String(),
+        });
+        bookmarks.insert(0,b);notifyListeners();return true;
+      } catch(e) {cloudError='Could not save cloud source: $e';notifyListeners();return false;}
+    }
+    bookmarks.insert(0,b);return persist();
+  }
+
+  Future<bool> deleteBookmark(String id) async {
+    if(cloudAuthenticated) {
+      try {await ShiftCloud.deleteBookmark(cloudWorkspaceId!,id);}
+      catch(e){cloudError='Could not remove cloud source: $e';notifyListeners();return false;}
+    }
+    bookmarks.removeWhere((b)=>b.id==id);
+    if(cloudAuthenticated){notifyListeners();return true;}
+    return persist();
+  }
+
+  Future<bool> importLocalDrafts() async {
+    if(!cloudAuthenticated) return false;
+    try {
+      final saved=await SharedPreferences.getInstance();
+      final raw=saved.getString('shift.workspace.v2');
+      if(raw==null)return true;
+      final json=jsonDecode(raw) as Map<String,dynamic>;
+      final local=(json['posts'] as List? ?? []).map((e)=>LocalPost.fromJson(Map<String,dynamic>.from(e as Map))).toList();
+      for(final p in local) {
+        // Local approvals and statuses never transfer; all imports are drafts.
+        await ShiftCloud.savePost(cloudWorkspaceId!,{
+          'client_id':p.id,'title':p.title,
+          'planned_at':null,'planning_timezone':p.timezone,'note':p.note,
+        },p.versions.map((v)=><String,dynamic>{
+          'caption':v.caption,'platform':v.platform,'headline':v.headline,
+          'hashtags':v.hashtags,'details':v.metadata,
+        }).toList());
+      }
+      await openCloud();return true;
+    } catch(e){cloudError='Import stopped; original local data is preserved: $e';notifyListeners();return false;}
+  }
+
   Future<bool> retrySave() { storageError = null; return persist(); }
 
   void record(String title, String route) {
@@ -194,7 +248,13 @@ class Workspace extends ChangeNotifier {
     return persist();
   }
   Future<bool> removePost(String id) {
-    if (cloudAuthenticated) { cloudError = 'Cloud deletion is not yet enabled. Draft retained.'; notifyListeners(); return false; }
+    if (cloudAuthenticated) {
+      try {
+        await ShiftCloud.deleteDraft(cloudWorkspaceId!,id);
+        posts.removeWhere((p)=>p.id==id);
+        notifyListeners();return true;
+      } catch(e){cloudError='Could not delete cloud draft: $e';notifyListeners();return false;}
+    }
     posts.removeWhere((p) => p.id == id);
     record('Local draft deleted', '/drafts');
     return persist();
