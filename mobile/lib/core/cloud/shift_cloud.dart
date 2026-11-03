@@ -4,7 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ShiftCloud {
   static const url = 'https://axgzpbtnqhuytlsanyto.supabase.co';
-  static const publishableKey = String.fromEnvironment('SHIFT_SUPABASE_PUBLISHABLE_KEY');
+  // The publishable key identifies SHIFT's public Supabase project; it is not a secret.
+  // Allow CI/builds to override it without requiring a Dart define for local builds.
+  static const publishableKey = String.fromEnvironment(
+    'SHIFT_SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_14hzpNBb_GovwwP-uTWliA_6O828Ihx',
+  );
   static bool get configured => publishableKey.isNotEmpty;
   static SupabaseClient get client => Supabase.instance.client;
   static User? get user => configured ? client.auth.currentUser : null;
