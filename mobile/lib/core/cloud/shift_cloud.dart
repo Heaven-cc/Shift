@@ -138,6 +138,25 @@ class ShiftCloud {
     return file.path;
   }
 
+  static Future<Map<String,dynamic>> searchWeb({
+    required String query,String freshness='pm',String country='US',
+    String language='en',
+  }) async {
+    if(user==null)throw StateError('Sign in to research live topics.');
+    final response=await client.functions.invoke('shift-research',body:{
+      'requestKey':'research-${DateTime.now().microsecondsSinceEpoch}',
+      'query':query,'freshness':freshness,
+      'country':country,'language':language,
+    });
+    final raw=response.data;
+    if(raw is! Map)throw StateError('Research service response unavailable.');
+    final result=Map<String,dynamic>.from(raw);
+    if(result['status']!='completed') {
+      throw StateError(result['error']?.toString() ?? 'Live research is unavailable.');
+    }
+    return result;
+  }
+
   static Future<Map<String,dynamic>> generateText({
     required String instructions,
     required String platform,
