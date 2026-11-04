@@ -147,8 +147,8 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       final target=selected['platform'] as String? ?? 'Any';
       if(target=='Instagram'||target=='Facebook')setState(()=>platform=target);
       changed();
-    } catch(e){
-      if(mounted)toast(context,'Could not load templates: $e');
+    } catch(_){
+      if(mounted)toast(context,'Could not load templates. Retry when connected.');
     }
   }
 
