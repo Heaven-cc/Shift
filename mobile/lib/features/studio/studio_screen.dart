@@ -68,9 +68,20 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final post = LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions], status: changedContent && wasReviewed ? PostStatus.draft : old?.status ?? PostStatus.draft, plannedAt: old?.plannedAt, timezone: old?.timezone ?? '');
     final ok = await workspace.savePost(post);
     if (mounted) {
-      setState(() { saving = false; dirty = revision != savedRevision; saveLabel = ok ? 'Saved on this device • v${versions.length}' : 'Storage failed • changes in memory'; });
+      setState(() {
+        saving=false;
+        // A failed cloud request must remain visibly unsaved and retryable.
+        dirty=!ok || revision!=savedRevision;
+        saveLabel=ok
+          ? (workspace.cloudAuthenticated
+              ? 'Synced to SHIFT Cloud • v${versions.length}'
+              : 'Saved on this device • v${versions.length}')
+          : 'Not saved • retry required';
+      });
       if (dirty) debounce = Timer(const Duration(milliseconds: 900), () => save(quiet: true));
-      if (!quiet) toast(context, ok ? 'Draft saved locally.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}' : 'Device storage failed. Retry saving.');
+      if (!quiet) toast(context, ok
+        ? (workspace.cloudAuthenticated ? 'Draft saved to SHIFT Cloud.' : 'Draft saved on this device.')
+        : 'Save failed. Retry before leaving the editor.');
     }
   }
   Future<void> generateWithShift() async {
