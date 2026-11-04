@@ -79,11 +79,12 @@ class SettingsScreen extends ConsumerWidget {
         TextButton(onPressed: () async { if (w.cloudAuthenticated) { await w.leaveCloud(); } else { w.entered = false; await w.persist(); } }, child: Text(w.cloudAuthenticated ? 'Sign out of SHIFT' : 'Leave local workspace')),
       ],
       if (section == 'help') ...[
-        const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('The planned cloud service will. This frontend cannot research, generate or publish in the background. Local planning dates do not trigger posts.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Draft text, version history and preferences are in this app’s local storage. Uploaded photos are copied into app storage. Clearing data or uninstalling can remove them. Cloud sync has not been added.'))]),
+        const Heading('A little help,\nwhen you need it.', 'SHIFT • 0.2.0'),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Publishing workers are not activated. Planning dates do not publish posts. Once authorized publishing is enabled, server workers—not the phone—will perform it.'))]),
+        ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('Where are my drafts?'), children: [Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(w.cloudAuthenticated ? 'Cloud drafts and images are saved to the SHIFT Supabase project when syncing succeeds. An unsaved edit is not a cloud backup; check for errors before leaving.' : 'Drafts are stored on this device only. Sign in and import local text drafts if you want cloud storage.'))]),
         const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('No connections are operational yet. Initial publishing integrations are planned for Instagram professional accounts and Facebook Pages. Personal accounts are not promised.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
+        const Text('Build: \${const String.fromEnvironment('SHIFT_BUILD_CHANNEL', defaultValue: 'development')} • Revision: \${const String.fromEnvironment('SHIFT_GIT_SHA', defaultValue: 'unavailable')}', style: TextStyle(fontSize: 12)),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
       ],
     ]));
