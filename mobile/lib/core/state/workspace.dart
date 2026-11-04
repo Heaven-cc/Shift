@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +24,7 @@ class Workspace extends ChangeNotifier {
   Map<String, bool> notificationPreferences = {'Approvals': true, 'Failures': true, 'Published posts': true, 'Research': true, 'Weekly reports': true};
   List<LocalPost> posts = [];
   List<ResearchBookmark> bookmarks = [];
+  List<Map<String,dynamic>> notifications = [];
   List<Map<String, String>> activity = [];
   SharedPreferences? _prefs;
   Future<void> _writes = Future.value();
@@ -131,6 +134,7 @@ class Workspace extends ChangeNotifier {
       savedAt:DateTime.parse(b['saved_at'] as String),
       publishedAt:b['published_at']==null?null:DateTime.parse(b['published_at'] as String),
     )).toList();
+    notifications = await ShiftCloud.loadNotifications(wid);
     cloudWorkspaceId = wid;
     cloudMode = true;
     entered = true;
@@ -141,10 +145,17 @@ class Workspace extends ChangeNotifier {
 
   Future<void> leaveCloud() async {
     await ShiftCloud.client.auth.signOut();
+    try {
+      final dir=await getApplicationDocumentsDirectory();
+      final cached=Directory('${dir.path}/shift_cloud_media');
+      if(await cached.exists())await cached.delete(recursive:true);
+    } catch (_) {
+      // A cache cleanup failure must not prevent sign-out.
+    }
     cloudMode = false; cloudWorkspaceId = null;
     entered = false; onboardingComplete = false;
     profile = {}; brand = {}; preferences = {}; interests = {};
-    posts = []; bookmarks = []; activity = [];
+    posts = []; bookmarks = []; activity = []; notifications=[];
     // Restore the unchanged local workspace, rather than merging identities.
     await restore();
     entered = false;
@@ -230,6 +241,24 @@ class Workspace extends ChangeNotifier {
     } catch(e){cloudError='Import stopped; original local data is preserved: $e';notifyListeners();return false;}
   }
 
+  Future<bool> markNotificationRead(String id) async {
+    if(!cloudAuthenticated)return false;
+    try {
+      await ShiftCloud.markNotificationRead(cloudWorkspaceId!,id);
+      final index=notifications.indexWhere((n)=>n['id']==id);
+      if(index>=0)notifications[index]['read_at']=DateTime.now().toUtc().toIso8601String();
+      cloudError=null;notifyListeners();return true;
+    } catch(e){cloudError='Could not mark notification read: $e';notifyListeners();return false;}
+  }
+
+  Future<bool> reloadNotifications() async {
+    if(!cloudAuthenticated)return false;
+    try {
+      notifications=await ShiftCloud.loadNotifications(cloudWorkspaceId!);
+      cloudError=null;notifyListeners();return true;
+    } catch(e){cloudError='Could not load notifications: $e';notifyListeners();return false;}
+  }
+
   Future<bool> retrySave() { storageError = null; return persist(); }
 
   void record(String title, String route) {
@@ -251,7 +280,7 @@ class Workspace extends ChangeNotifier {
     if (cloudAuthenticated) { notifyListeners(); return saveCloudPost(post); }
     return persist();
   }
-  Future<bool> removePost(String id) {
+  Future<bool> removePost(String id) async {
     if (cloudAuthenticated) {
       try {
         await ShiftCloud.deleteDraft(cloudWorkspaceId!,id);
