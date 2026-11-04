@@ -16,6 +16,14 @@ class HomeScreen extends ConsumerWidget {
       Panel(glass: true, child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.bolt_outlined), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Waiting for connection', style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 6), Text(w.cloudAuthenticated
           ? 'Cloud drafts are available. Social publishing remains unavailable until your accounts are authorized.'
           : 'Work on drafts locally; sign in for cloud backup. Publishing is not active.')]))])),
+      if(w.cloudError!=null) ...[
+        const SizedBox(height:12),
+        Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('Cloud sync needs attention',style:TextStyle(fontWeight:FontWeight.w700)),
+          const SizedBox(height:6),
+          Text(w.cloudError!,maxLines:3,overflow:TextOverflow.ellipsis),
+        ])),
+      ],
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         _metric(context, 'Published', '—', () => context.go('/insights')),
