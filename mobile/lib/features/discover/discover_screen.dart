@@ -28,7 +28,7 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
     setState(() {searching=true;researchError=null;filter='Trending';});
     try {
       final response=await ShiftCloud.client.functions.invoke('shift-research',body:{
-        'query':term,'request_id':'shift-${DateTime.now().microsecondsSinceEpoch}',
+        'query':term,'requestKey':'shift-${DateTime.now().microsecondsSinceEpoch}',
       });
       if(response.data is! Map)throw StateError('Invalid search response');
       final payload=Map<String,dynamic>.from(response.data as Map);
@@ -56,7 +56,7 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
     return PageBody(children: [
       const Heading('Follow your curiosity.', 'Find an angle worth sharing. Keep the sources that matter.'),
       TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if(v.trim().isNotEmpty)researchTopic(); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: () => researchTopic(), icon: const Icon(Icons.arrow_forward)))),
-      const SizedBox(height: 16), const ServiceNotice(text: 'Live research is unavailable. Saved sources are user supplied and unverified.'),
+      const SizedBox(height: 16), const ServiceNotice(text: 'Search results require a connected provider and remain unverified until reviewed.'),
       Wrap(spacing: 8, children: ['Saved', 'Trending', 'For you', 'History'].map((s) => ChoiceChip(label: Text(s), selected: filter == s, onSelected: (_) => setState(() => filter = s))).toList()),
       if (w.interests.isNotEmpty) ...[
         const Section('Your interests'),
@@ -85,7 +85,7 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
             Text(entry['publisher'] as String? ?? '',
               style:Theme.of(context).textTheme.bodySmall),
             const SizedBox(height:8),
-            Text(entry['summary'] as String? ?? ''),
+            Text(entry['snippet'] as String? ?? ''),
             const SizedBox(height:8),
             const Text('Provider result • Not independently fact checked',
               style:TextStyle(fontSize:11)),
