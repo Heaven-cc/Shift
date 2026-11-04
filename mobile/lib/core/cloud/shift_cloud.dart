@@ -138,6 +138,31 @@ class ShiftCloud {
     return file.path;
   }
 
+  static Future<Map<String,dynamic>> generateText({
+    required String instructions,
+    required String platform,
+    required String goal,
+    required String tone,
+    required String language,
+    required String length,
+    required String audience,
+  }) async {
+    if(user==null)throw StateError('Sign in to use AI drafting.');
+    final response=await client.functions.invoke('shift-generate-text',body:{
+      'requestKey':'shift-${DateTime.now().microsecondsSinceEpoch}',
+      'prompt':instructions,
+      'platform':platform,'goal':goal,'tone':tone,
+      'language':language,'length':length,'audience':audience,
+    });
+    final raw=response.data;
+    if(raw is! Map)throw StateError('AI service returned an invalid response.');
+    final result=Map<String,dynamic>.from(raw);
+    if(result['status']!='completed' || result['result'] is! Map) {
+      throw StateError(result['error']?.toString() ?? 'AI model is not configured yet.');
+    }
+    return Map<String,dynamic>.from(result['result'] as Map);
+  }
+
   static Future<List<Map<String,dynamic>>> loadNotifications(String wid) async {
     final rows = await client.from('shift_notifications')
         .select('id,kind,title,body,payload,read_at,created_at')
