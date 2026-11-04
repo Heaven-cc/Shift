@@ -35,7 +35,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     if (widget.postId != null && matches.isEmpty) missing = true;
     if (matches.isNotEmpty) {
       final p = matches.first, v = p.current;
-      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = 'Saved on this device';
+      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = workspace.cloudAuthenticated ? 'Synced to SHIFT Cloud' : 'Saved on this device';
       instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? '';
     }
     if (widget.sourceId != null) {
