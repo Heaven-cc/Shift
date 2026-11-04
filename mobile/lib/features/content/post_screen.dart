@@ -23,10 +23,20 @@ class PostsScreen extends ConsumerStatefulWidget {
   @override ConsumerState<PostsScreen> createState() => _PostsState();
 }
 class _PostsState extends ConsumerState<PostsScreen> {
-  String query = '', status = 'All';
+  String query = '', status = 'All', platform = 'All', sort = 'Newest';
   int limit = 30;
   @override Widget build(BuildContext context) {
-    final posts = ref.watch(workspaceProvider).posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
+    final posts=ref.watch(workspaceProvider).posts.where((p)=>
+      (!widget.approvals || p.status==PostStatus.pendingApproval)
+      && (p.title.toLowerCase().contains(query.toLowerCase()) ||
+          p.current.caption.toLowerCase().contains(query.toLowerCase()))
+      && (status=='All' || statusLabel(p.status)==status)
+      && (platform=='All' || p.current.platform==platform)
+    ).toList()..sort((a,b) {
+      if(sort=='Title A–Z')return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      if(sort=='Oldest')return a.current.createdAt.compareTo(b.current.createdAt);
+      return b.current.createdAt.compareTo(a.current.createdAt);
+    });
     return Scaffold(appBar: AppBar(title: Text(widget.approvals ? 'Approval inbox' : 'Draft library')), body: PageBody(children: [
       ServiceNotice(text: widget.approvals
         ? (ref.watch(workspaceProvider).cloudAuthenticated
@@ -38,6 +48,14 @@ class _PostsState extends ConsumerState<PostsScreen> {
       TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
       const SizedBox(height: 12),
       if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => status = v!)),
+      if (!widget.approvals) Wrap(spacing:12,runSpacing:4,children:[
+        DropdownButton<String>(value:platform,
+          items:['All','Instagram','Facebook'].map((s)=>DropdownMenuItem(value:s,child:Text(s=='All'?'All platforms':s))).toList(),
+          onChanged:(v){if(v!=null)setState(() {platform=v;limit=30;});}),
+        DropdownButton<String>(value:sort,
+          items:['Newest','Oldest','Title A–Z'].map((s)=>DropdownMenuItem(value:s,child:Text(s))).toList(),
+          onChanged:(v){if(v!=null)setState(() {sort=v;limit=30;});}),
+      ]),
       if (posts.isEmpty) Empty(widget.approvals ? 'All caught up' : 'Start with an idea', widget.approvals ? 'No local drafts are waiting for your review.' : 'Create a post, then save or plan it.', action: FilledButton(onPressed: () => context.go('/create'), child: const Text('Create a post'))),
       ...posts.take(limit).map((p) => PostTile(post: p)),
       if (posts.length > limit) OutlinedButton(onPressed: () => setState(() => limit += 30), child: const Text('Load more drafts')),
@@ -103,6 +121,23 @@ class PostScreen extends ConsumerWidget {
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         FilledButton(onPressed: () => context.push('/edit/$id'), child: const Text('Edit draft')),
+        OutlinedButton(onPressed: () async {
+          final duplicate=LocalPost(
+            id:DateTime.now().microsecondsSinceEpoch.toString(),
+            title:'Copy of ${p.title}',
+            status:PostStatus.draft,
+            versions:[ContentVersion(
+              caption:v.caption,createdAt:DateTime.now(),imagePath:v.imagePath,
+              platform:v.platform,headline:v.headline,hashtags:v.hashtags,
+              metadata:v.metadata,
+            )],
+          );
+          final ok=await w.savePost(duplicate);
+          if(context.mounted){
+            if(ok){toast(context,'Created a new draft.');context.push('/post/${duplicate.id}');}
+            else toast(context,'Could not duplicate draft. Retry before leaving.');
+          }
+        },child:const Text('Duplicate as draft')),
         OutlinedButton(onPressed: () => planPost(context, ref, p), child: Text(p.plannedAt == null ? 'Add planning date' : 'Reschedule local plan')),
         OutlinedButton(onPressed: () => unavailable(context, 'Server scheduling'), child: const Text('Schedule to account')),
         OutlinedButton(onPressed: () => unavailable(context, 'Publishing'), child: const Text('Publish now')),
