@@ -13,6 +13,7 @@ import 'features/calendar/calendar_screen.dart';
 import 'features/analytics/insights_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/content/post_screen.dart';
+import 'features/templates/templates_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final workspace = ref.read(workspaceProvider);
@@ -34,6 +35,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     ]),
     GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
     GoRoute(path: '/settings/:section', builder: (_, s) => SettingsScreen(section: s.pathParameters['section'])),
+    GoRoute(path: '/templates', builder: (_, __) => const TemplatesScreen()),
     GoRoute(path: '/accounts', builder: (_, __) => const AccountsScreen()),
     GoRoute(path: '/automation', builder: (_, __) => const AutomationScreen()),
     GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
