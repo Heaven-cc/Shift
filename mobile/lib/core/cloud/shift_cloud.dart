@@ -138,6 +138,48 @@ class ShiftCloud {
     return file.path;
   }
 
+  static Future<List<Map<String,dynamic>>> loadNotifications(String wid) async {
+    final rows = await client.from('shift_notifications')
+        .select('id,kind,title,body,payload,read_at,created_at')
+        .eq('workspace_id',wid).order('created_at',ascending:false).limit(100);
+    return List<Map<String,dynamic>>.from(rows);
+  }
+
+  static Future<void> markNotificationRead(String wid,String id) async {
+    final updated=await client.from('shift_notifications')
+      .update({'read_at':DateTime.now().toUtc().toIso8601String()})
+      .eq('workspace_id',wid).eq('id',id).select('id');
+    if(updated.isEmpty) throw StateError('Notification no longer available');
+  }
+
+  static Future<List<Map<String,dynamic>>> loadTemplates(String wid) async {
+    final rows=await client.from('shift_content_templates')
+      .select('id,title,body,platform,created_at')
+      .eq('workspace_id',wid).order('created_at',ascending:false).limit(100);
+    return List<Map<String,dynamic>>.from(rows);
+  }
+
+  static Future<void> saveTemplate(
+    String wid,{String? id,required String title,required String body,required String platform}
+  ) async {
+    if (id==null) {
+      await client.from('shift_content_templates').insert({
+        'workspace_id':wid,'title':title,'body':body,'platform':platform,
+      });
+    } else {
+      final result=await client.from('shift_content_templates').update({
+        'title':title,'body':body,'platform':platform,
+      }).eq('workspace_id',wid).eq('id',id).select('id');
+      if(result.isEmpty) throw StateError('Template no longer exists');
+    }
+  }
+
+  static Future<void> deleteTemplate(String wid,String id) async {
+    final result=await client.from('shift_content_templates').delete()
+      .eq('workspace_id',wid).eq('id',id).select('id');
+    if(result.isEmpty) throw StateError('Template no longer exists');
+  }
+
   static Future<List<Map<String,dynamic>>> loadPosts(String wid) async {
     final rows = await client.from('shift_content_posts').select().eq('workspace_id',wid).order('updated_at',ascending:false);
     final out = <Map<String,dynamic>>[];
