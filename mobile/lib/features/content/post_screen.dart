@@ -45,9 +45,9 @@ class _PostsState extends ConsumerState<PostsScreen> {
         : (ref.watch(workspaceProvider).cloudAuthenticated
             ? 'Synced cloud drafts • Changes require server confirmation.'
             : 'Saved on this device • No cloud sync')),
-      TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
+      TextField(onChanged: (v) => setState(() {query = v; limit=30;}), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
       const SizedBox(height: 12),
-      if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => status = v!)),
+      if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() {status = v!; limit=30;})),
       if (!widget.approvals) Wrap(spacing:12,runSpacing:4,children:[
         DropdownButton<String>(value:platform,
           items:['All','Instagram','Facebook'].map((s)=>DropdownMenuItem(value:s,child:Text(s=='All'?'All platforms':s))).toList(),
