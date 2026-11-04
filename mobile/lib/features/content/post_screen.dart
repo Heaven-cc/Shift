@@ -14,7 +14,7 @@ class PostTile extends StatelessWidget {
   final LocalPost post;
   @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Panel(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: ListTile(contentPadding: EdgeInsets.zero,
     leading: SizedBox(width: 44, height: 44, child: ClipRRect(borderRadius: BorderRadius.circular(10), child: post.current.imagePath == null ? const Icon(Icons.article_outlined) : Image.file(File(post.current.imagePath!), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported_outlined)))),
-    title: Text(post.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${post.current.platform} • ${statusLabel(post.status)}\n${post.plannedAt == null ? 'Local draft' : 'Local plan: ${DateFormat.MMMd().add_jm().format(post.plannedAt!)}'}'),
+    title: Text(post.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${post.current.platform} • ${statusLabel(post.status)}\n${post.plannedAt == null ? 'Draft' : 'Planning date: ${DateFormat.MMMd().add_jm().format(post.plannedAt!)}'}'),
     isThreeLine: true, trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/post/${post.id}'))));
 }
 class PostsScreen extends ConsumerStatefulWidget {
@@ -28,7 +28,13 @@ class _PostsState extends ConsumerState<PostsScreen> {
   @override Widget build(BuildContext context) {
     final posts = ref.watch(workspaceProvider).posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
     return Scaffold(appBar: AppBar(title: Text(widget.approvals ? 'Approval inbox' : 'Draft library')), body: PageBody(children: [
-      ServiceNotice(text: widget.approvals ? 'Local review queue • These decisions do not authorize server publishing.' : 'Saved on this device • No cloud sync'),
+      ServiceNotice(text: widget.approvals
+        ? (ref.watch(workspaceProvider).cloudAuthenticated
+            ? 'Cloud review inbox • Only exact approved versions may be scheduled.'
+            : 'Local review queue • These decisions do not authorize server publishing.')
+        : (ref.watch(workspaceProvider).cloudAuthenticated
+            ? 'Synced cloud drafts • Changes require server confirmation.'
+            : 'Saved on this device • No cloud sync')),
       TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
       const SizedBox(height: 12),
       if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => status = v!)),
@@ -116,7 +122,17 @@ class PostScreen extends ConsumerWidget {
       const Section('Version history'),
       ...p.versions.reversed.toList().asMap().entries.map((e) => ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Version ${p.versions.length - e.key}'), subtitle: Text(DateFormat.yMMMd().add_jm().format(e.value.createdAt)), children: [
         Padding(padding: const EdgeInsets.only(bottom: 12), child: SelectableText(e.value.caption)),
-        if (e.key != 0 && !w.cloudAuthenticated) TextButton(onPressed: () async { if (await confirm(context, 'Restore this version?', 'A new draft version will be created. Previous reviews will be cleared.', action: 'Restore')) { final old = e.value; await w.changePost(p.copyWith(status: PostStatus.draft, versions: [...p.versions, ContentVersion(caption: old.caption, createdAt: DateTime.now(), imagePath: old.imagePath, platform: old.platform, headline: old.headline, hashtags: old.hashtags, metadata: old.metadata)]), 'Earlier version restored for review'); } }, child: const Text('Restore as new draft version')),
+        if (e.key != 0 && p.status != PostStatus.publishing && p.status != PostStatus.published && p.status != PostStatus.scheduled) TextButton(onPressed: () async { if (await confirm(context, 'Restore this version?', 'Restore the older text as a new revision. It will need approval again.', action: 'Restore')) {
+          final old = e.value;
+          final restored = p.copyWith(status: PostStatus.draft,versions:[
+            ...p.versions,
+            ContentVersion(caption:old.caption,createdAt:DateTime.now(),
+              imagePath:old.imagePath,platform:old.platform,headline:old.headline,
+              hashtags:old.hashtags,metadata:old.metadata),
+          ]);
+          final saved=await w.changePost(restored,'Earlier version restored for review');
+          if(context.mounted)toast(context,saved ? 'Restored as a new draft revision.' : 'Could not save restored revision.');
+        } }, child: const Text('Restore as new draft version')),
       ])),
       const Section('Content feedback'),
       Wrap(spacing: 8, children: ['More like this', 'Not relevant', 'Change tone'].map((s) => ActionChip(label: Text(s), onPressed: () async { w.preferences['feedback:$id'] = s; final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'Feedback saved locally. AI learning is not connected.' : 'Could not persist feedback.'); })).toList()),
@@ -136,5 +152,5 @@ Future<void> planPost(BuildContext context, WidgetRef ref, LocalPost p) async {
   final at = DateTime(date.year, date.month, date.day, time.hour, time.minute);
   if (!at.isAfter(now)) { toast(context, 'Choose a future planning time.'); return; }
   final ok = await ref.read(workspaceProvider).changePost(p.copyWith(plannedAt: at, timezone: '${at.timeZoneName} (UTC${at.timeZoneOffset.isNegative ? '' : '+'}${at.timeZoneOffset.inMinutes / 60})'), 'Local content plan updated');
-  if (context.mounted) toast(context, ok ? 'Planning date saved locally. No server schedule created.' : 'Planning date is in memory only. Storage failed.');
+  if(context.mounted)toast(context,ok ? 'Planning date saved. No social post has been scheduled.' : 'Unable to save planning date; please retry.');
 }
