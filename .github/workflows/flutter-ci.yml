@@ -1,0 +1,94 @@
+name: SHIFT Flutter verification
+
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/flutter-ci.yml']
+  pull_request:
+    paths: ['mobile/**', '.github/workflows/flutter-ci.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Inspect Flutter toolchain
+        run: flutter --version
+      - name: Resolve dependencies
+        working-directory: mobile
+        run: flutter pub get --enforce-lockfile
+      - name: Record resolved Flutter dependencies
+        working-directory: mobile
+        run: |
+          test -s pubspec.lock
+          echo 'SHIFT_LOCK_START'
+          base64 pubspec.lock
+          echo 'SHIFT_LOCK_END'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shift-pubspec-lock
+          path: mobile/pubspec.lock
+          retention-days: 7
+      - name: Analyze source
+        working-directory: mobile
+        run: flutter analyze --no-pub --no-fatal-infos
+      - name: Run tests
+        working-directory: mobile
+        run: flutter test --no-pub --reporter expanded
+  android-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [analyze-and-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # GitHub-hosted Ubuntu runners already include the Android SDK.
+      # setup-android failed before Flutter could build; use the preinstalled SDK.
+      - name: Verify Android SDK
+        run: |
+          test -d "${ANDROID_HOME:-/opt/android-sdk}" || { echo 'ANDROID_HOME is unavailable'; exit 1; }
+          java -version
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Precache Flutter Android artifacts
+        run: flutter precache --android
+      - name: Force Flutter to use the validated JDK 17
+        run: |
+          flutter config --jdk-dir="$JAVA_HOME"
+          flutter doctor -v
+      - name: Build debug APK
+        working-directory: mobile
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter build apk --debug --dart-define=SHIFT_BUILD_CHANNEL=qa
+      - name: Print Gradle diagnostics when Android build fails
+        if: failure()
+        working-directory: mobile/android
+        run: |
+          java -version
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shift-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7

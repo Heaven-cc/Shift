@@ -26,7 +26,9 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
     }).toList();
     return PageBody(children: [
       const Heading('Give your ideas\na place in time.', 'A clear view of your content plan.'),
-      const ServiceNotice(text: 'Local planning only • Server schedules and publishing are unavailable'),
+      ServiceNotice(text: w.cloudAuthenticated
+          ? 'Cloud planning dates are not confirmed publishing schedules. Social publishing is inactive.'
+          : 'Device planning only • Server scheduling and publishing are unavailable'),
       Wrap(spacing: 8, children: ['Month', 'Week', 'Day', 'List'].map((s) => ChoiceChip(label: Text(s), selected: view == s, onSelected: (_) => setState(() => view = s))).toList()),
       Row(children: [
         IconButton(tooltip: 'Previous period', onPressed: () => move(-1), icon: const Icon(Icons.chevron_left)),
@@ -44,14 +46,14 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
           final count = planned.where((p) => DateUtils.isSameDay(p.plannedAt, date)).length;
           return InkWell(borderRadius: BorderRadius.circular(12), onTap: () => setState(() { selected = date; view = 'Day'; }), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Text('$day', style: TextStyle(fontWeight: DateUtils.isSameDay(date, DateTime.now()) ? FontWeight.w900 : FontWeight.normal)),
-            Text(count == 0 ? ' ' : '•', semanticsLabel: '$count local plans', style: const TextStyle(fontSize: 14)),
+            Text(count == 0 ? ' ' : '•', semanticsLabel: '$count planned drafts', style: const TextStyle(fontSize: 14)),
           ]));
         }),
       ])),
       if (view == 'Week') SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: List.generate(7, (i) { final d = start.add(Duration(days: i)); return Padding(padding: const EdgeInsets.only(right: 8), child: ActionChip(label: Text(DateFormat('E d').format(d)), onPressed: () => setState(() { selected = d; view = 'Day'; }))); }))),
       const Section('Content in this view'),
       DropdownButton<String>(value: status, isExpanded: true, items: ['All', 'draft', 'pendingApproval', 'approved', 'scheduled', 'publishing', 'published', 'failed', 'canceled'].map((s) => DropdownMenuItem(value: s, child: Text(s == 'All' ? 'All statuses' : s))).toList(), onChanged: (v) => setState(() => status = v!)),
-      if (visible.isEmpty) Empty('A little breathing room', 'No local plans in this view. Add a planning date from any saved draft.', icon: Icons.event_note_outlined, action: OutlinedButton(onPressed: () => context.push('/drafts'), child: const Text('Open drafts'))),
+      if (visible.isEmpty) Empty('A little breathing room', 'No planned drafts in this view. Add a planning date from a saved draft.', icon: Icons.event_note_outlined, action: OutlinedButton(onPressed: () => context.push('/drafts'), child: const Text('Open drafts'))),
       ...visible.map((p) => PostTile(post: p)),
       const Section('Schedule preferences'),
       OutlinedButton(onPressed: () => context.push('/automation'), child: const Text('Weekly targets & posting windows')),

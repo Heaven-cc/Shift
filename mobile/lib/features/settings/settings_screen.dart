@@ -21,6 +21,7 @@ class SettingsScreen extends ConsumerWidget {
         Heading(w.brand['name'] ?? 'Make SHIFT yours.', 'A workspace that sounds like you.'),
         const ServiceNotice(),
         ...[
+          ('Content templates', 'Saved writing patterns and repeatable drafts', Icons.book_outlined, '/templates'),
           ('Profile', 'Name, language and timezone', Icons.person_outline, '/settings/profile'),
           ('Brand identity', 'Audience, voice and guidelines', Icons.fingerprint, '/settings/brand'),
           ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
@@ -39,7 +40,7 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 20), const Panel(child: Text('SHIFT follows your device’s reduced-motion setting. Text sizes follow system accessibility preferences.')),
       ],
       if (section == 'notifications') ...[
-        const ServiceNotice(text: 'Preferences are saved on this device. Push delivery is not configured.'),
+        ServiceNotice(text: w.cloudAuthenticated ? 'Notification preferences sync to SHIFT Cloud. Push delivery is not configured.' : 'Preferences are saved on this device. Push delivery is not configured.'),
         ...w.notificationPreferences.keys.map((k) => SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(k), value: w.notificationPreferences[k]!, onChanged: (v) { w.notificationPreferences[k] = v; w.persist(); })),
         const Section('Delivery'),
         const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.phonelink_erase), title: Text('Push notifications'), subtitle: Text('Unavailable until mobile push services are connected')),
@@ -65,6 +66,7 @@ class SettingsScreen extends ConsumerWidget {
         OutlinedButton(onPressed: () => unavailable(context, 'Cloud data export'), child: const Text('Export account data')),
         const SizedBox(height: 12),
         OutlinedButton(onPressed: () async {
+          if(w.cloudAuthenticated){toast(context,'Sign out to clear your separate local-only workspace.');return;}
           if (!await confirm(context, 'Clear all local data?', 'This deletes local drafts, version history, uploaded images, source bookmarks and preferences from this device. This cannot be undone.', action: 'Clear local data')) return;
           try {
             final dir = await getApplicationDocumentsDirectory();
@@ -77,11 +79,12 @@ class SettingsScreen extends ConsumerWidget {
         TextButton(onPressed: () async { if (w.cloudAuthenticated) { await w.leaveCloud(); } else { w.entered = false; await w.persist(); } }, child: Text(w.cloudAuthenticated ? 'Sign out of SHIFT' : 'Leave local workspace')),
       ],
       if (section == 'help') ...[
-        const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('The planned cloud service will. This frontend cannot research, generate or publish in the background. Local planning dates do not trigger posts.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Draft text, version history and preferences are in this app’s local storage. Uploaded photos are copied into app storage. Clearing data or uninstalling can remove them. Cloud sync has not been added.'))]),
+        const Heading('A little help,\nwhen you need it.', 'SHIFT • 0.2.0'),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Publishing workers are not activated. Planning dates do not publish posts. Once authorized publishing is enabled, server workers—not the phone—will perform it.'))]),
+        ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('Where are my drafts?'), children: [Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(w.cloudAuthenticated ? 'Cloud drafts and images are saved to the SHIFT Supabase project when syncing succeeds. An unsaved edit is not a cloud backup; check for errors before leaving.' : 'Drafts are stored on this device only. Sign in and import local text drafts if you want cloud storage.'))]),
         const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('No connections are operational yet. Initial publishing integrations are planned for Instagram professional accounts and Facebook Pages. Personal accounts are not promised.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
+        const Text('Build: ${const String.fromEnvironment("SHIFT_BUILD_CHANNEL", defaultValue: "development")} • Revision: ${const String.fromEnvironment("SHIFT_GIT_SHA", defaultValue: "unavailable")}', style: TextStyle(fontSize: 12)),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
       ],
     ]));
@@ -246,18 +249,66 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
 }
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
-  @override ConsumerState<NotificationsScreen> createState() => _NotificationsState();
+  @override
+  ConsumerState<NotificationsScreen> createState() => _NotificationsState();
 }
+
 class _NotificationsState extends ConsumerState<NotificationsScreen> {
-  bool activity = false;
-  @override Widget build(BuildContext context) {
-    final w = ref.watch(workspaceProvider);
-    return Scaffold(appBar: AppBar(title: const Text('Your updates'), actions: [IconButton(tooltip: 'Notification preferences', onPressed: () => context.push('/settings/notifications'), icon: const Icon(Icons.tune))]), body: PageBody(children: [
-      SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Notifications')), ButtonSegment(value: true, label: Text('Local activity'))], selected: {activity}, onSelectionChanged: (v) => setState(() => activity = v.first)),
-      const SizedBox(height: 20),
-      if (!activity) const Empty('You’re all caught up', 'No server notifications have been received. Push delivery is not connected.', icon: Icons.notifications_none),
-      if (activity && w.activity.isEmpty) const Empty('A fresh start', 'Your local workspace changes will appear here.'),
-      if (activity) ...w.activity.map((a) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.history), title: Text(a['title']!), subtitle: Text('Local • ${DateFormat.MMMd().add_jm().format(DateTime.parse(a['at']!))}'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push(a['route']!))),
-    ]));
+  bool activity=false;
+  @override
+  Widget build(BuildContext context) {
+    final w=ref.watch(workspaceProvider);
+    final notices=w.notifications;
+    return Scaffold(
+      appBar:AppBar(title:const Text('Your updates'),actions:[
+        if(w.cloudAuthenticated) IconButton(
+          tooltip:'Refresh notifications',
+          onPressed:() async {
+            final ok=await w.reloadNotifications();
+            if(context.mounted && !ok)toast(context,'Could not refresh notifications.');
+          },icon:const Icon(Icons.refresh)),
+        IconButton(tooltip:'Notification preferences',
+          onPressed:()=>context.push('/settings/notifications'),
+          icon:const Icon(Icons.tune)),
+      ]),
+      body:PageBody(children:[
+        SegmentedButton<bool>(
+          segments:const [
+            ButtonSegment(value:false,label:Text('Notifications')),
+            ButtonSegment(value:true,label:Text('Local activity')),
+          ],
+          selected:{activity},onSelectionChanged:(v)=>setState(()=>activity=v.first)),
+        const SizedBox(height:20),
+        if(!activity && notices.isEmpty) const Empty('You’re all caught up',
+          'No in-app notifications yet. Push delivery is not configured.',
+          icon:Icons.notifications_none),
+        if(!activity) ...notices.map((n) {
+          final unread=n['read_at']==null;
+          final created=DateTime.tryParse(n['created_at'] as String? ?? '');
+          return ListTile(
+            contentPadding:EdgeInsets.zero,
+            leading:Icon(unread?Icons.notifications_active_outlined:Icons.notifications_none),
+            title:Text(n['title'] as String? ?? 'SHIFT update',
+              style:TextStyle(fontWeight:unread?FontWeight.w700:FontWeight.w400)),
+            subtitle:Text('${n['body'] as String? ?? ''}\n${created==null?'':DateFormat.MMMd().add_jm().format(created.toLocal())}'),
+            isThreeLine:true,
+            onTap:unread?() async {
+              final ok=await w.markNotificationRead(n['id'] as String);
+              if(!ok && context.mounted)toast(context,'Could not mark notification read.');
+            }:null,
+          );
+        }),
+        if(activity && w.activity.isEmpty) const Empty('A fresh start',
+          'Your device activity will appear here.'),
+        if(activity) ...w.activity.map((a)=>ListTile(
+          contentPadding:EdgeInsets.zero,
+          leading:const Icon(Icons.history),
+          title:Text(a['title'] ?? 'Activity'),
+          subtitle:Text('Local • ${DateFormat.MMMd().add_jm().format(DateTime.parse(a['at']!))}'),
+          trailing:const Icon(Icons.chevron_right),
+          onTap:()=>context.push(a['route']!),
+        )),
+      ]),
+    );
   }
 }

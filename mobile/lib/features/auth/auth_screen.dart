@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gotrue/gotrue.dart' show OtpType;
 import 'package:go_router/go_router.dart';
 import '../../core/state/workspace.dart';
 import '../../core/cloud/shift_cloud.dart';
@@ -77,8 +78,12 @@ class _AuthScreenState extends State<AuthScreen> {
               if (!mounted) return;
               await ProviderScope.containerOf(context).read(workspaceProvider).openCloud();
             }
-          } catch (e) {
-            if (mounted) toast(context,'Authentication failed: $e');
+          } catch (_) {
+            if (mounted) toast(context, register
+              ? 'Registration could not be completed. Check your details and connection.'
+              : reset || verify
+                ? 'Could not send the email right now. Try again shortly.'
+                : 'Sign-in failed. Check your credentials and connection.');
           } finally {
             if (mounted) setState(() => busy = false);
           }

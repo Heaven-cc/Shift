@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
@@ -14,14 +15,48 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 class _DiscoverState extends ConsumerState<DiscoverScreen> {
   final query = TextEditingController();
   String filter = 'Saved';
+  bool searching=false;
+  String? researchError;
+  List<Map<String,dynamic>> researchResults=[];
+
+  Future<void> researchTopic() async {
+    final term=query.text.trim();
+    if(term.isEmpty){toast(context,'Enter a topic first.');return;}
+    final workspace=ref.read(workspaceProvider);
+    if(!workspace.cloudAuthenticated){toast(context,'Sign in to research live topics.');return;}
+    if(searching)return;
+    setState(() {searching=true;researchError=null;filter='Trending';});
+    try {
+      final response=await ShiftCloud.client.functions.invoke('shift-research',body:{
+        'query':term,'requestKey':'shift-${DateTime.now().microsecondsSinceEpoch}',
+      });
+      if(response.data is! Map)throw StateError('Invalid search response');
+      final payload=Map<String,dynamic>.from(response.data as Map);
+      if(payload['results'] is! List)throw StateError('Search provider is not active');
+      if(!mounted)return;
+      setState((){
+        researchResults=(payload['results'] as List)
+          .whereType<Map>().map((v)=>Map<String,dynamic>.from(v)).toList();
+        researchError=null;
+      });
+    } catch (_) {
+      if(mounted)setState((){
+        researchError='Live research is unavailable. Configure SHIFT search in Supabase and try again.';
+        researchResults=[];
+      });
+    } finally {
+      if(mounted)setState(()=>searching=false);
+    }
+  }
+
   @override void dispose() { query.dispose(); super.dispose(); }
   @override Widget build(BuildContext context) {
     final w = ref.watch(workspaceProvider);
     final matches = w.bookmarks.where((b) => b.topic.toLowerCase().contains(query.text.toLowerCase())).toList();
     return PageBody(children: [
       const Heading('Follow your curiosity.', 'Find an angle worth sharing. Keep the sources that matter.'),
-      TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) unavailable(context, 'Research'); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: () => query.text.trim().isEmpty ? toast(context, 'Enter a topic first.') : unavailable(context, 'Research'), icon: const Icon(Icons.arrow_forward)))),
-      const SizedBox(height: 16), const ServiceNotice(text: 'Live research is unavailable. Saved sources are user supplied and unverified.'),
+      TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if(v.trim().isNotEmpty)researchTopic(); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: () => researchTopic(), icon: const Icon(Icons.arrow_forward)))),
+      const SizedBox(height: 16), const ServiceNotice(text: 'Search results require a connected provider and remain unverified until reviewed.'),
       Wrap(spacing: 8, children: ['Saved', 'Trending', 'For you', 'History'].map((s) => ChoiceChip(label: Text(s), selected: filter == s, onSelected: (_) => setState(() => filter = s))).toList()),
       if (w.interests.isNotEmpty) ...[
         const Section('Your interests'),
@@ -33,7 +68,46 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
         ...matches.map((b) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Panel(child: ListTile(contentPadding: EdgeInsets.zero, title: Text(b.topic), subtitle: Text('${Uri.tryParse(b.url)?.host ?? b.url}\nUser supplied • Unverified'), isThreeLine: true, trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/research/${b.id}'))))),
       ] else ...[
         Section(filter == 'Trending' ? 'Emerging topics' : filter == 'For you' ? 'Recommended angles' : 'Research history'),
-        Empty('No live research yet', 'Research results, provenance, retrieval dates and verification status will appear after the cloud research service is connected.', icon: Icons.travel_explore, action: OutlinedButton(onPressed: () => unavailable(context, 'Research'), child: const Text('Check research availability'))),
+        if(searching)const LinearProgressIndicator(),
+        if(researchError!=null)Panel(child:Column(children:[
+          Text(researchError!),
+          OutlinedButton(onPressed:researchTopic,child:const Text('Retry research')),
+        ])),
+        if(!searching && researchResults.isEmpty && researchError==null)
+          const Empty('No live research yet','Search above to retrieve sourced results once the provider is configured.',
+            icon:Icons.travel_explore),
+        ...researchResults.map((entry) {
+          final uri=Uri.tryParse(entry['url'] as String? ?? '');
+          return Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text(entry['title'] as String? ?? 'Untitled source',
+              style:Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height:6),
+            Text(entry['publisher'] as String? ?? '',
+              style:Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height:8),
+            Text(entry['snippet'] as String? ?? ''),
+            const SizedBox(height:8),
+            const Text('Provider result • Not independently fact checked',
+              style:TextStyle(fontSize:11)),
+            Wrap(spacing:8,children:[
+              OutlinedButton(onPressed:uri!=null && uri.scheme=='https'
+                ?()=>launchUrl(uri,mode:LaunchMode.externalApplication):null,
+                child:const Text('Open source')),
+              FilledButton(onPressed:uri==null || uri.scheme!='https'?null:() async {
+                final workspace=ref.read(workspaceProvider);
+                final item=ResearchBookmark(
+                  id:DateTime.now().microsecondsSinceEpoch.toString(),
+                  topic:entry['title'] as String? ?? 'Research source',
+                  url:uri.toString(),notes:entry['summary'] as String? ?? '',
+                  publisher:entry['publisher'] as String? ?? '',
+                  savedAt:DateTime.now(),
+                );
+                final ok=await workspace.addBookmark(item);
+                if(context.mounted)toast(context,ok?'Saved to your research sources.':'Could not save source.');
+              },child:const Text('Save source')),
+            ]),
+          ]));
+        }),
       ],
     ]);
   }

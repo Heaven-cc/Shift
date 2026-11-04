@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'media_validation.dart';
 
 class ShiftCloud {
   static const url = 'https://axgzpbtnqhuytlsanyto.supabase.co';
@@ -116,12 +117,16 @@ class ShiftCloud {
     if(!await file.exists())throw StateError('Selected image is no longer on this device');
     final size=await file.length();
     if(size<=0 || size>10*1024*1024)throw StateError('Image must be under 10 MB');
-    // Images selected by SHIFT's picker are normalized as JPEG.
-    final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.jpg';
+    // Never trust the original extension or a client-supplied MIME string.
+    final header=await file.openRead(0,16).first;
+    final recognized=ShiftImageType.fromHeader(header);
+    if(recognized==null)throw StateError('Unsupported image bytes: JPEG, PNG, or WebP required');
+    final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.${recognized.extension}';
     await client.storage.from('shift-media').upload(path,file,
-      fileOptions:const FileOptions(contentType:'image/jpeg',upsert:false));
+      fileOptions:FileOptions(contentType:recognized.mime,upsert:false));
     await client.from('shift_media_assets').insert({
-      'workspace_id':wid,'storage_path':path,'mime_type':'image/jpeg','size_bytes':size,
+      'workspace_id':wid,'storage_path':path,
+      'mime_type':recognized.mime,'size_bytes':size,
     });
     return path;
   }
@@ -138,6 +143,92 @@ class ShiftCloud {
     return file.path;
   }
 
+  static Future<Map<String,dynamic>> searchWeb({
+    required String query,String freshness='pm',String country='US',
+    String language='en',
+  }) async {
+    if(user==null)throw StateError('Sign in to research live topics.');
+    final response=await client.functions.invoke('shift-research',body:{
+      'requestKey':'research-${DateTime.now().microsecondsSinceEpoch}',
+      'query':query,'freshness':freshness,
+      'country':country,'language':language,
+    });
+    final raw=response.data;
+    if(raw is! Map)throw StateError('Research service response unavailable.');
+    final result=Map<String,dynamic>.from(raw);
+    if(result['status']!='completed') {
+      throw StateError(result['error']?.toString() ?? 'Live research is unavailable.');
+    }
+    return result;
+  }
+
+  static Future<Map<String,dynamic>> generateText({
+    required String instructions,
+    required String platform,
+    required String goal,
+    required String tone,
+    required String language,
+    required String length,
+    required String audience,
+  }) async {
+    if(user==null)throw StateError('Sign in to use AI drafting.');
+    final response=await client.functions.invoke('shift-generate-text',body:{
+      'requestKey':'shift-${DateTime.now().microsecondsSinceEpoch}',
+      'prompt':instructions,
+      'platform':platform,'goal':goal,'tone':tone,
+      'language':language,'length':length,'audience':audience,
+    });
+    final raw=response.data;
+    if(raw is! Map)throw StateError('AI service returned an invalid response.');
+    final result=Map<String,dynamic>.from(raw);
+    if(result['status']!='completed' || result['result'] is! Map) {
+      throw StateError(result['error']?.toString() ?? 'AI model is not configured yet.');
+    }
+    return Map<String,dynamic>.from(result['result'] as Map);
+  }
+
+  static Future<List<Map<String,dynamic>>> loadNotifications(String wid) async {
+    final rows = await client.from('shift_notifications')
+        .select('id,kind,title,body,payload,read_at,created_at')
+        .eq('workspace_id',wid).order('created_at',ascending:false).limit(100);
+    return List<Map<String,dynamic>>.from(rows);
+  }
+
+  static Future<void> markNotificationRead(String wid,String id) async {
+    final updated=await client.from('shift_notifications')
+      .update({'read_at':DateTime.now().toUtc().toIso8601String()})
+      .eq('workspace_id',wid).eq('id',id).select('id');
+    if(updated.isEmpty) throw StateError('Notification no longer available');
+  }
+
+  static Future<List<Map<String,dynamic>>> loadTemplates(String wid) async {
+    final rows=await client.from('shift_content_templates')
+      .select('id,title,body,platform,created_at')
+      .eq('workspace_id',wid).order('created_at',ascending:false).limit(100);
+    return List<Map<String,dynamic>>.from(rows);
+  }
+
+  static Future<void> saveTemplate(
+    String wid,{String? id,required String title,required String body,required String platform}
+  ) async {
+    if (id==null) {
+      await client.from('shift_content_templates').insert({
+        'workspace_id':wid,'title':title,'body':body,'platform':platform,
+      });
+    } else {
+      final result=await client.from('shift_content_templates').update({
+        'title':title,'body':body,'platform':platform,
+      }).eq('workspace_id',wid).eq('id',id).select('id');
+      if(result.isEmpty) throw StateError('Template no longer exists');
+    }
+  }
+
+  static Future<void> deleteTemplate(String wid,String id) async {
+    final result=await client.from('shift_content_templates').delete()
+      .eq('workspace_id',wid).eq('id',id).select('id');
+    if(result.isEmpty) throw StateError('Template no longer exists');
+  }
+
   static Future<List<Map<String,dynamic>>> loadPosts(String wid) async {
     final rows = await client.from('shift_content_posts').select().eq('workspace_id',wid).order('updated_at',ascending:false);
     final out = <Map<String,dynamic>>[];
@@ -148,35 +239,55 @@ class ShiftCloud {
     return out;
   }
 
-  static Future<void> savePost(String wid, Map<String,dynamic> p, List<Map<String,dynamic>> versions) async {
-    final existing = await client.from('shift_content_posts').select('id,current_version,status')
-      .eq('workspace_id',wid).eq('client_id',p['client_id'] as String).limit(1);
-    String id;
-    int remoteVersion;
-    if (existing.isEmpty) {
-      final created = await client.from('shift_content_posts').insert({
-        'workspace_id':wid, 'client_id':p['client_id'],'title':p['title'],
-        'planned_at':p['planned_at'],'planning_timezone':p['planning_timezone'],'note':p['note'],
-      }).select('id').single();
-      id=created['id'] as String; remoteVersion=0;
-    } else {
-      id=existing.first['id'] as String;
-      remoteVersion=existing.first['current_version'] as int;
-      if (existing.first['status'] != 'draft' && versions.length <= remoteVersion) {
-        throw StateError('A cloud review is active. Change the cloud post using a reviewed workflow.');
-      }
+  // Each version is committed through a single owner-checked transaction.
+  // The expected version and deterministic operation key reject duplicate
+  // retries and stale multi-device writes instead of silently overwriting them.
+  static Future<void> savePost(
+    String wid, Map<String,dynamic> p, List<Map<String,dynamic>> versions,
+  ) async {
+    final clientId = p['client_id'] as String;
+    final existing = await client.from('shift_content_posts')
+        .select('id,current_version,status')
+        .eq('workspace_id', wid).eq('client_id', clientId).limit(1);
+    final remoteVersion = existing.isEmpty
+        ? 0
+        : existing.first['current_version'] as int;
+    if (remoteVersion > versions.length) {
+      throw StateError('Cloud revision is newer. Reload to resolve this conflict.');
     }
-    for (var i=remoteVersion;i<versions.length;i++) {
-      final draft=Map<String,dynamic>.from(versions[i]);
-      final imagePath=draft.remove('local_image_path') as String?;
-      final storagePath=await uploadImage(wid,imagePath);
-      await client.from('shift_content_versions').insert({
-        ...draft,'media_path':storagePath,'post_id':id,'version_number':i+1,
+    if (versions.isEmpty) {
+      throw StateError('A caption is required before saving a draft.');
+    }
+    for (var i = remoteVersion; i < versions.length; i++) {
+      final draft = Map<String,dynamic>.from(versions[i]);
+      final imagePath = draft.remove('local_image_path') as String?;
+      final storagePath = await uploadImage(wid, imagePath);
+      final expectedVersion = i;
+      await client.rpc('shift_save_content_revision', params: {
+        'p_client_id': clientId,
+        'p_expected_version': expectedVersion,
+        'p_title': p['title'],
+        'p_caption': draft['caption'],
+        'p_platform': draft['platform'],
+        'p_headline': draft['headline'],
+        'p_hashtags': draft['hashtags'],
+        'p_details': draft['details'],
+        'p_media_path': storagePath,
+        'p_idempotency_key': '$clientId:version:${i + 1}',
       });
     }
-    await client.from('shift_content_posts').update({
-      'title':p['title'], 'planned_at':p['planned_at'],
-      'planning_timezone':p['planning_timezone'], 'note':p['note'],
-    }).eq('id',id);
+    // Reviewed and published posts cannot be edited through this action.
+    // Only update draft planning metadata after the revision has committed.
+    if (existing.isEmpty || remoteVersion < versions.length ||
+        existing.first['status'] == 'draft') {
+      await client.rpc('shift_update_content_plan', params: {
+        'p_client_id': clientId,
+        'p_expected_version': versions.length,
+        'p_title': p['title'],
+        'p_planned_at': p['planned_at'],
+        'p_timezone': p['planning_timezone'],
+        'p_note': p['note'],
+      });
+    }
   }
 }

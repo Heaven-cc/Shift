@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class StudioScreen extends ConsumerStatefulWidget {
@@ -15,13 +16,13 @@ class StudioScreen extends ConsumerStatefulWidget {
 }
 class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserver {
   final form = GlobalKey<FormState>();
-  final title = TextEditingController(), instruction = TextEditingController(), caption = TextEditingController(), audience = TextEditingController(), hook = TextEditingController(), tags = TextEditingController(), cta = TextEditingController();
+  final title = TextEditingController(), instruction = TextEditingController(), caption = TextEditingController(), audience = TextEditingController(), hook = TextEditingController(), tags = TextEditingController(), cta = TextEditingController(), altText = TextEditingController();
   late final Workspace workspace;
   String platform = 'Instagram', goal = 'Educate', tone = 'Conversational', language = 'English', length = 'Medium', output = 'Text + image';
   String? imagePath;
   late String id;
   List<ContentVersion> versions = [];
-  bool saving = false, dirty = false, missing = false;
+  bool saving = false, dirty = false, missing = false, generating = false;
   String saveLabel = 'Not saved yet';
   Timer? debounce;
   int revision = 0;
@@ -34,15 +35,15 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     if (widget.postId != null && matches.isEmpty) missing = true;
     if (matches.isNotEmpty) {
       final p = matches.first, v = p.current;
-      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = 'Saved on this device';
-      instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? '';
+      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = workspace.cloudAuthenticated ? 'Synced to SHIFT Cloud' : 'Saved on this device';
+      instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? ''; altText.text = v.metadata['altText'] ?? '';
     }
     if (widget.sourceId != null) {
       final sources = workspace.bookmarks.where((b) => b.id == widget.sourceId);
       if (sources.isNotEmpty) { final b = sources.first; title.text = b.topic; instruction.text = 'Source: ${b.url}\nUnverified user notes: ${b.notes}'; }
     }
     if (matches.isEmpty) language = workspace.brand['language']?.isNotEmpty == true ? workspace.brand['language']! : 'English';
-    for (final c in [title, caption, hook, tags, instruction, audience, cta]) { c.addListener(changed); }
+    for (final c in [title, caption, hook, tags, instruction, audience, cta, altText]) { c.addListener(changed); }
   }
   void changed() {
     if (!mounted) return;
@@ -50,7 +51,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 900), () { if (caption.text.trim().isNotEmpty) save(quiet: true); });
   }
-  ContentVersion currentVersion() => ContentVersion(caption: caption.text.trim(), createdAt: DateTime.now(), imagePath: imagePath, platform: platform, headline: hook.text.trim(), hashtags: tags.text.trim(), metadata: {'instruction': instruction.text.trim(), 'goal': goal, 'tone': tone, 'language': language, 'length': length, 'output': output, 'audience': audience.text.trim(), 'cta': cta.text.trim(), if (widget.sourceId != null) 'sourceId': widget.sourceId!});
+  ContentVersion currentVersion() => ContentVersion(caption: caption.text.trim(), createdAt: DateTime.now(), imagePath: imagePath, platform: platform, headline: hook.text.trim(), hashtags: tags.text.trim(), metadata: {'instruction': instruction.text.trim(), 'goal': goal, 'tone': tone, 'language': language, 'length': length, 'output': output, 'audience': audience.text.trim(), 'cta': cta.text.trim(), 'altText': altText.text.trim(), if (widget.sourceId != null) 'sourceId': widget.sourceId!});
   Future<void> save({bool quiet = false}) async {
     if (saving || caption.text.trim().isEmpty) { if (!quiet && mounted) toast(context, 'Write a caption to save your draft.'); return; }
     debounce?.cancel();
@@ -67,11 +68,101 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final post = LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions], status: changedContent && wasReviewed ? PostStatus.draft : old?.status ?? PostStatus.draft, plannedAt: old?.plannedAt, timezone: old?.timezone ?? '');
     final ok = await workspace.savePost(post);
     if (mounted) {
-      setState(() { saving = false; dirty = revision != savedRevision; saveLabel = ok ? 'Saved on this device • v${versions.length}' : 'Storage failed • changes in memory'; });
+      setState(() {
+        saving=false;
+        // A failed cloud request must remain visibly unsaved and retryable.
+        dirty=!ok || revision!=savedRevision;
+        saveLabel=ok
+          ? (workspace.cloudAuthenticated
+              ? 'Synced to SHIFT Cloud • v${versions.length}'
+              : 'Saved on this device • v${versions.length}')
+          : 'Not saved • retry required';
+      });
       if (dirty) debounce = Timer(const Duration(milliseconds: 900), () => save(quiet: true));
-      if (!quiet) toast(context, ok ? 'Draft saved locally.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}' : 'Device storage failed. Retry saving.');
+      if (!quiet) toast(context, ok
+        ? (workspace.cloudAuthenticated ? 'Draft saved to SHIFT Cloud.' : 'Draft saved on this device.')
+        : 'Save failed. Retry before leaving the editor.');
     }
   }
+  Future<void> generateWithShift() async {
+    if(instruction.text.trim().isEmpty) {
+      toast(context,'Describe the content you want to create.');
+      return;
+    }
+    if(!workspace.cloudAuthenticated) {
+      toast(context,'Sign in to use SHIFT AI drafting.');
+      return;
+    }
+    if(generating)return;
+    setState(()=>generating=true);
+    try {
+      final draft=await ShiftCloud.generateText(
+        instructions:instruction.text.trim(),platform:platform,
+        goal:goal,tone:tone,language:language,length:length,
+        audience:audience.text.trim(),
+      );
+      if(!mounted)return;
+      final text=draft['caption'] as String? ?? '';
+      if(text.isEmpty)throw StateError('AI returned an empty draft');
+      caption.text=text;
+      hook.text=draft['headline'] as String? ?? '';
+      tags.text=draft['hashtags'] as String? ?? '';
+      cta.text=draft['cta'] as String? ?? '';
+      changed();
+      toast(context,'AI draft ready for your review. Nothing has been published.');
+    } catch(_) {
+      if(mounted)toast(context,
+        'AI drafting is currently unavailable. Connect the model in SHIFT Supabase.');
+    } finally {
+      if(mounted)setState(()=>generating=false);
+    }
+  }
+
+  Future<void> useSavedTemplate() async {
+    if(!workspace.cloudAuthenticated){
+      if(mounted)toast(context,'Sign in to use cloud templates.');
+      return;
+    }
+    try {
+      final templates=await ShiftCloud.loadTemplates(workspace.cloudWorkspaceId!);
+      if(!mounted)return;
+      if(templates.isEmpty){
+        toast(context,'Create a template in Settings first.');
+        return;
+      }
+      final selected=await showModalBottomSheet<Map<String,dynamic>>(
+        context:context,showDragHandle:true,isScrollControlled:true,
+        builder:(sheet)=>SafeArea(child:Padding(
+          padding:const EdgeInsets.all(16),child:ListView(
+            shrinkWrap:true,children:[
+              Text('Choose a template',style:Theme.of(sheet).textTheme.titleMedium),
+              const SizedBox(height:12),
+              ...templates.map((t)=>ListTile(
+                title:Text(t['title'] as String),
+                subtitle:Text(t['platform'] as String? ?? 'Any'),
+                onTap:()=>Navigator.pop(sheet,t),
+              )),
+            ],
+          ),
+        )),
+      );
+      if(selected==null || !mounted)return;
+      final text=selected['body'] as String? ?? '';
+      if(caption.text.trim().isNotEmpty){
+        final replace=await confirm(context,'Replace current caption?',
+          'The selected template will replace the text in your editor.',
+          action:'Use template');
+        if(!replace)return;
+      }
+      caption.text=text;
+      final target=selected['platform'] as String? ?? 'Any';
+      if(target=='Instagram'||target=='Facebook')setState(()=>platform=target);
+      changed();
+    } catch(_){
+      if(mounted)toast(context,'Could not load templates. Retry when connected.');
+    }
+  }
+
   Future<void> pickImage() async {
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2048, maxHeight: 2048, imageQuality: 85);
@@ -96,7 +187,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       final old = workspace.posts.where((p) => p.id == id);
       workspace.savePost(LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions, v], plannedAt: old.isEmpty ? null : old.first.plannedAt, timezone: old.isEmpty ? '' : old.first.timezone));
     }
-    for (final c in [title, instruction, caption, audience, hook, tags, cta]) { c.dispose(); }
+    for (final c in [title, instruction, caption, audience, hook, tags, cta, altText]) { c.dispose(); }
     super.dispose();
   }
   Widget option(String label, String value, List<String> items, ValueChanged<String> change) => Padding(padding: const EdgeInsets.only(bottom: 16), child: DropdownButtonFormField<String>(value: value, isExpanded: true, decoration: InputDecoration(labelText: label), items: items.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) { change(v!); changed(); }));
@@ -105,21 +196,22 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final brandName = ref.watch(workspaceProvider).brand['name'] ?? 'Your brand';
     return PageBody(children: [
       Heading(widget.postId == null ? 'What should SHIFT\ncreate today?' : 'Make it sound like you.', 'Write an original post, refine it, and keep every version.'),
-      const ServiceNotice(),
+      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud draft editing. AI drafts require review before publishing.' : 'Local-only mode. Sign in to use cloud AI services.'),
       if (widget.postId == null) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async {
         if (caption.text.trim().isNotEmpty) await save(quiet: true);
         if (!mounted) return;
         if (workspace.storageError != null) { toast(context, 'Save the current draft before starting another.'); return; }
         debounce?.cancel();
-        for (final c in [title, instruction, caption, hook, tags, cta]) { c.clear(); }
+        for (final c in [title, instruction, caption, hook, tags, cta, altText]) { c.clear(); }
         debounce?.cancel();
         setState(() { id = DateTime.now().microsecondsSinceEpoch.toString(); versions = []; imagePath = null; dirty = false; saveLabel = 'Not saved yet'; });
       }, icon: const Icon(Icons.add), label: const Text('New draft'))),
       Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Panel(glass: true, child: Column(children: [
           TextField(controller: instruction, maxLines: 3, decoration: const InputDecoration(labelText: 'Your instructions', hintText: 'An educational post about your next big idea…')),
-          const SizedBox(height: 12), FilledButton.icon(onPressed: () => instruction.text.trim().isEmpty ? toast(context, 'Describe what you want to create.') : unavailable(context, 'AI text and image generation'), icon: const Icon(Icons.auto_awesome), label: const Text('Generate with SHIFT')),
+          const SizedBox(height: 12), FilledButton.icon(onPressed:generating?null:generateWithShift, icon:const Icon(Icons.auto_awesome),label:Text(generating?'Generating draft…':'Generate with SHIFT')),
         ])),
+        OutlinedButton.icon(onPressed:useSavedTemplate, icon:const Icon(Icons.book_outlined), label:const Text('Use saved template')),
         const Section('Creative direction'),
         option('Destination preview', platform, ['Instagram', 'Facebook'], (v) => setState(() => platform = v)),
         option('Content goal', goal, ['Educate', 'Inform', 'Entertain', 'Promote', 'Build awareness', 'Encourage engagement'], (v) => setState(() => goal = v)),
@@ -137,7 +229,14 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
         const SizedBox(height: 12), Field('Hashtags', controller: tags),
         Wrap(spacing: 8, runSpacing: 8, children: ['Regenerate text', 'Change tone', 'Shorten', 'Expand', 'Alternative hooks'].map((s) => OutlinedButton(onPressed: () => unavailable(context, s), child: Text(s))).toList()),
         const Section('Media'),
-        if (imagePath != null) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.file(File(imagePath!), height: 230, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Empty('Image unavailable', 'Choose a replacement from your device.'))),
+        if (imagePath != null) Semantics(
+          label:altText.text.trim().isEmpty ? 'Attached draft image' : altText.text.trim(),
+          image:true,
+          child:ClipRRect(borderRadius: BorderRadius.circular(16),
+            child:Image.file(File(imagePath!),height:230,fit:BoxFit.cover,
+              excludeFromSemantics:true,
+              errorBuilder:(_,__,___)=>const Empty('Image unavailable','Choose a replacement from your device.'))),
+        ),
         if (imagePath == null) const Empty('Add a visual', 'Upload an image from your device. AI-generated images need a connected service.', icon: Icons.image_outlined),
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
@@ -145,6 +244,14 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           OutlinedButton(onPressed: () => unavailable(context, 'Image generation'), child: const Text('Generate image')),
           if (imagePath != null) TextButton(onPressed: () { setState(() => imagePath = null); changed(); }, child: const Text('Remove image')),
         ]),
+        if(imagePath!=null) ...[
+          const SizedBox(height:12),
+          TextField(controller:altText,maxLength:300,
+            decoration:const InputDecoration(
+              labelText:'Accessible image description (alt text)',
+              hintText:'Describe what is visible for screen-reader users',
+            )),
+        ],
         const Section('Platform preview'),
         Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [const CircleAvatar(child: Icon(Icons.person_outline)), const SizedBox(width: 12), Expanded(child: Text(brandName, style: Theme.of(context).textTheme.titleMedium)), Text(platform)]),
