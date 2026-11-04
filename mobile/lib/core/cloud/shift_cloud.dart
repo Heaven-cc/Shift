@@ -148,35 +148,55 @@ class ShiftCloud {
     return out;
   }
 
-  static Future<void> savePost(String wid, Map<String,dynamic> p, List<Map<String,dynamic>> versions) async {
-    final existing = await client.from('shift_content_posts').select('id,current_version,status')
-      .eq('workspace_id',wid).eq('client_id',p['client_id'] as String).limit(1);
-    String id;
-    int remoteVersion;
-    if (existing.isEmpty) {
-      final created = await client.from('shift_content_posts').insert({
-        'workspace_id':wid, 'client_id':p['client_id'],'title':p['title'],
-        'planned_at':p['planned_at'],'planning_timezone':p['planning_timezone'],'note':p['note'],
-      }).select('id').single();
-      id=created['id'] as String; remoteVersion=0;
-    } else {
-      id=existing.first['id'] as String;
-      remoteVersion=existing.first['current_version'] as int;
-      if (existing.first['status'] != 'draft' && versions.length <= remoteVersion) {
-        throw StateError('A cloud review is active. Change the cloud post using a reviewed workflow.');
-      }
+  // Each version is committed through a single owner-checked transaction.
+  // The expected version and deterministic operation key reject duplicate
+  // retries and stale multi-device writes instead of silently overwriting them.
+  static Future<void> savePost(
+    String wid, Map<String,dynamic> p, List<Map<String,dynamic>> versions,
+  ) async {
+    final clientId = p['client_id'] as String;
+    final existing = await client.from('shift_content_posts')
+        .select('id,current_version,status')
+        .eq('workspace_id', wid).eq('client_id', clientId).limit(1);
+    final remoteVersion = existing.isEmpty
+        ? 0
+        : existing.first['current_version'] as int;
+    if (remoteVersion > versions.length) {
+      throw StateError('Cloud revision is newer. Reload to resolve this conflict.');
     }
-    for (var i=remoteVersion;i<versions.length;i++) {
-      final draft=Map<String,dynamic>.from(versions[i]);
-      final imagePath=draft.remove('local_image_path') as String?;
-      final storagePath=await uploadImage(wid,imagePath);
-      await client.from('shift_content_versions').insert({
-        ...draft,'media_path':storagePath,'post_id':id,'version_number':i+1,
+    if (versions.isEmpty) {
+      throw StateError('A caption is required before saving a draft.');
+    }
+    for (var i = remoteVersion; i < versions.length; i++) {
+      final draft = Map<String,dynamic>.from(versions[i]);
+      final imagePath = draft.remove('local_image_path') as String?;
+      final storagePath = await uploadImage(wid, imagePath);
+      final expectedVersion = i;
+      await client.rpc('shift_save_content_revision', params: {
+        'p_client_id': clientId,
+        'p_expected_version': expectedVersion,
+        'p_title': p['title'],
+        'p_caption': draft['caption'],
+        'p_platform': draft['platform'],
+        'p_headline': draft['headline'],
+        'p_hashtags': draft['hashtags'],
+        'p_details': draft['details'],
+        'p_media_path': storagePath,
+        'p_idempotency_key': '$clientId:version:${i + 1}',
       });
     }
-    await client.from('shift_content_posts').update({
-      'title':p['title'], 'planned_at':p['planned_at'],
-      'planning_timezone':p['planning_timezone'], 'note':p['note'],
-    }).eq('id',id);
+    // Reviewed and published posts cannot be edited through this action.
+    // Only update draft planning metadata after the revision has committed.
+    if (existing.isEmpty || remoteVersion < versions.length ||
+        existing.first['status'] == 'draft') {
+      await client.rpc('shift_update_content_plan', params: {
+        'p_client_id': clientId,
+        'p_expected_version': versions.length,
+        'p_title': p['title'],
+        'p_planned_at': p['planned_at'],
+        'p_timezone': p['planning_timezone'],
+        'p_note': p['note'],
+      });
+    }
   }
 }
