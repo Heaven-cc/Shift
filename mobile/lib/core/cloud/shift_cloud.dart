@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'media_validation.dart';
 
 class ShiftCloud {
   static const url = 'https://axgzpbtnqhuytlsanyto.supabase.co';
@@ -116,12 +117,16 @@ class ShiftCloud {
     if(!await file.exists())throw StateError('Selected image is no longer on this device');
     final size=await file.length();
     if(size<=0 || size>10*1024*1024)throw StateError('Image must be under 10 MB');
-    // Images selected by SHIFT's picker are normalized as JPEG.
-    final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.jpg';
+    // Never trust the original extension or a client-supplied MIME string.
+    final header=await file.openRead(0,16).first;
+    final recognized=ShiftImageType.fromHeader(header);
+    if(recognized==null)throw StateError('Unsupported image bytes: JPEG, PNG, or WebP required');
+    final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.${recognized.extension}';
     await client.storage.from('shift-media').upload(path,file,
-      fileOptions:const FileOptions(contentType:'image/jpeg',upsert:false));
+      fileOptions:FileOptions(contentType:recognized.mime,upsert:false));
     await client.from('shift_media_assets').insert({
-      'workspace_id':wid,'storage_path':path,'mime_type':'image/jpeg','size_bytes':size,
+      'workspace_id':wid,'storage_path':path,
+      'mime_type':recognized.mime,'size_bytes':size,
     });
     return path;
   }
