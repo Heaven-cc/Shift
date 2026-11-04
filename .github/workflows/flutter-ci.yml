@@ -70,11 +70,21 @@ jobs:
           cache: true
       - name: Precache Flutter Android artifacts
         run: flutter precache --android
+      - name: Force Flutter to use the validated JDK 17
+        run: |
+          flutter config --jdk-dir="$JAVA_HOME"
+          flutter doctor -v
       - name: Build debug APK
         working-directory: mobile
         run: |
           flutter pub get
           flutter build apk --debug --dart-define=SHIFT_BUILD_CHANNEL=qa
+      - name: Print Gradle diagnostics when Android build fails
+        if: failure()
+        working-directory: mobile/android
+        run: |
+          java -version
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon || true
       - uses: actions/upload-artifact@v4
         with:
           name: shift-debug-apk
