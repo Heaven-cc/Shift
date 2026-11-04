@@ -22,7 +22,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
   String? imagePath;
   late String id;
   List<ContentVersion> versions = [];
-  bool saving = false, dirty = false, missing = false;
+  bool saving = false, dirty = false, missing = false, generating = false;
   String saveLabel = 'Not saved yet';
   Timer? debounce;
   int revision = 0;
@@ -73,6 +73,40 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       if (!quiet) toast(context, ok ? 'Draft saved locally.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}' : 'Device storage failed. Retry saving.');
     }
   }
+  Future<void> generateWithShift() async {
+    if(instruction.text.trim().isEmpty) {
+      toast(context,'Describe the content you want to create.');
+      return;
+    }
+    if(!workspace.cloudAuthenticated) {
+      toast(context,'Sign in to use SHIFT AI drafting.');
+      return;
+    }
+    if(generating)return;
+    setState(()=>generating=true);
+    try {
+      final draft=await ShiftCloud.generateText(
+        instructions:instruction.text.trim(),platform:platform,
+        goal:goal,tone:tone,language:language,length:length,
+        audience:audience.text.trim(),
+      );
+      if(!mounted)return;
+      final text=draft['caption'] as String? ?? '';
+      if(text.isEmpty)throw StateError('AI returned an empty draft');
+      caption.text=text;
+      hook.text=draft['headline'] as String? ?? '';
+      tags.text=draft['hashtags'] as String? ?? '';
+      cta.text=draft['cta'] as String? ?? '';
+      changed();
+      toast(context,'AI draft ready for your review. Nothing has been published.');
+    } catch(_) {
+      if(mounted)toast(context,
+        'AI drafting is currently unavailable. Connect the model in SHIFT Supabase.');
+    } finally {
+      if(mounted)setState(()=>generating=false);
+    }
+  }
+
   Future<void> useSavedTemplate() async {
     if(!workspace.cloudAuthenticated){
       if(mounted)toast(context,'Sign in to use cloud templates.');
@@ -151,7 +185,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final brandName = ref.watch(workspaceProvider).brand['name'] ?? 'Your brand';
     return PageBody(children: [
       Heading(widget.postId == null ? 'What should SHIFT\ncreate today?' : 'Make it sound like you.', 'Write an original post, refine it, and keep every version.'),
-      const ServiceNotice(),
+      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud draft editing. AI drafts require review before publishing.' : 'Local-only mode. Sign in to use cloud AI services.'),
       if (widget.postId == null) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async {
         if (caption.text.trim().isNotEmpty) await save(quiet: true);
         if (!mounted) return;
@@ -164,7 +198,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Panel(glass: true, child: Column(children: [
           TextField(controller: instruction, maxLines: 3, decoration: const InputDecoration(labelText: 'Your instructions', hintText: 'An educational post about your next big idea…')),
-          const SizedBox(height: 12), FilledButton.icon(onPressed: () => instruction.text.trim().isEmpty ? toast(context, 'Describe what you want to create.') : unavailable(context, 'AI text and image generation'), icon: const Icon(Icons.auto_awesome), label: const Text('Generate with SHIFT')),
+          const SizedBox(height: 12), FilledButton.icon(onPressed:generating?null:generateWithShift, icon:const Icon(Icons.auto_awesome),label:Text(generating?'Generating draft…':'Generate with SHIFT')),
         ])),
         OutlinedButton.icon(onPressed:useSavedTemplate, icon:const Icon(Icons.book_outlined), label:const Text('Use saved template')),
         const Section('Creative direction'),
