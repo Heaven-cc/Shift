@@ -24,12 +24,13 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.9'
           cache: true
       - name: Inspect Flutter toolchain
         run: flutter --version
       - name: Resolve dependencies
         working-directory: mobile
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Record resolved Flutter dependencies
         working-directory: mobile
         run: |
@@ -67,6 +68,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.9'
           cache: true
       - name: Precache Flutter Android artifacts
         run: flutter precache --android
@@ -77,7 +79,7 @@ jobs:
       - name: Build debug APK
         working-directory: mobile
         run: |
-          flutter pub get
+          flutter pub get --enforce-lockfile
           flutter build apk --debug --dart-define=SHIFT_BUILD_CHANNEL=qa
       - name: Print Gradle diagnostics when Android build fails
         if: failure()
