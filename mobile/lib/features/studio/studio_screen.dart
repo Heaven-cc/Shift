@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class StudioScreen extends ConsumerStatefulWidget {
@@ -72,6 +73,51 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       if (!quiet) toast(context, ok ? 'Draft saved locally.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}' : 'Device storage failed. Retry saving.');
     }
   }
+  Future<void> useSavedTemplate() async {
+    if(!workspace.cloudAuthenticated){
+      if(mounted)toast(context,'Sign in to use cloud templates.');
+      return;
+    }
+    try {
+      final templates=await ShiftCloud.loadTemplates(workspace.cloudWorkspaceId!);
+      if(!mounted)return;
+      if(templates.isEmpty){
+        toast(context,'Create a template in Settings first.');
+        return;
+      }
+      final selected=await showModalBottomSheet<Map<String,dynamic>>(
+        context:context,showDragHandle:true,isScrollControlled:true,
+        builder:(sheet)=>SafeArea(child:Padding(
+          padding:const EdgeInsets.all(16),child:ListView(
+            shrinkWrap:true,children:[
+              Text('Choose a template',style:Theme.of(sheet).textTheme.titleMedium),
+              const SizedBox(height:12),
+              ...templates.map((t)=>ListTile(
+                title:Text(t['title'] as String),
+                subtitle:Text(t['platform'] as String? ?? 'Any'),
+                onTap:()=>Navigator.pop(sheet,t),
+              )),
+            ],
+          ),
+        )),
+      );
+      if(selected==null || !mounted)return;
+      final text=selected['body'] as String? ?? '';
+      if(caption.text.trim().isNotEmpty){
+        final replace=await confirm(context,'Replace current caption?',
+          'The selected template will replace the text in your editor.',
+          action:'Use template');
+        if(!replace)return;
+      }
+      caption.text=text;
+      final target=selected['platform'] as String? ?? 'Any';
+      if(target=='Instagram'||target=='Facebook')setState(()=>platform=target);
+      changed();
+    } catch(e){
+      if(mounted)toast(context,'Could not load templates: $e');
+    }
+  }
+
   Future<void> pickImage() async {
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2048, maxHeight: 2048, imageQuality: 85);
@@ -120,6 +166,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           TextField(controller: instruction, maxLines: 3, decoration: const InputDecoration(labelText: 'Your instructions', hintText: 'An educational post about your next big idea…')),
           const SizedBox(height: 12), FilledButton.icon(onPressed: () => instruction.text.trim().isEmpty ? toast(context, 'Describe what you want to create.') : unavailable(context, 'AI text and image generation'), icon: const Icon(Icons.auto_awesome), label: const Text('Generate with SHIFT')),
         ])),
+        OutlinedButton.icon(onPressed:useSavedTemplate, icon:const Icon(Icons.book_outlined), label:const Text('Use saved template')),
         const Section('Creative direction'),
         option('Destination preview', platform, ['Instagram', 'Facebook'], (v) => setState(() => platform = v)),
         option('Content goal', goal, ['Educate', 'Inform', 'Entertain', 'Promote', 'Build awareness', 'Encourage engagement'], (v) => setState(() => goal = v)),
