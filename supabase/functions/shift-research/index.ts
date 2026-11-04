@@ -63,7 +63,8 @@ Deno.serve(async(req:Request)=>{
     const seen=new Set<string>();
     for(const item of (payload.web?.results??[])) {
       if(typeof item.url!=="string")continue;
-      const link=new URL(item.url);
+      let link:URL;
+      try {link=new URL(item.url);} catch {continue;}
       if(link.protocol!=="https:"||link.username||link.password||
          link.hostname==="localhost"||link.hostname.endsWith(".local")||
          seen.has(link.toString()))continue;
