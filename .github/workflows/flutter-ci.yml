@@ -30,6 +30,18 @@ jobs:
       - name: Resolve dependencies
         working-directory: mobile
         run: flutter pub get
+      - name: Record resolved Flutter dependencies
+        working-directory: mobile
+        run: |
+          test -s pubspec.lock
+          echo 'SHIFT_LOCK_START'
+          base64 pubspec.lock
+          echo 'SHIFT_LOCK_END'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shift-pubspec-lock
+          path: mobile/pubspec.lock
+          retention-days: 7
       - name: Analyze source
         working-directory: mobile
         run: flutter analyze --no-pub --no-fatal-infos
