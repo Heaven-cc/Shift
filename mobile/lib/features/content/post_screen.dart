@@ -92,9 +92,9 @@ class PostScreen extends ConsumerWidget {
           } else { throw StateError('Unsupported cloud status change'); }
           await w.openCloud();
           ok=true;
-        } catch(e) {
+        } catch (_) {
           ok=false;
-          w.cloudError='Cloud review failed: $e';
+          w.cloudError='Cloud review could not be completed. Check your connection and retry.';
         }
       } else {
         ok = await w.changePost(p.copyWith(status: s), message);
