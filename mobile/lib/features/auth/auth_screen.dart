@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gotrue/gotrue.dart' show OtpType;
 import 'package:go_router/go_router.dart';
 import '../../core/state/workspace.dart';
 import '../../core/cloud/shift_cloud.dart';
