@@ -45,13 +45,20 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
-      - uses: android-actions/setup-android@v3
+          java-version: '21'
+      # GitHub-hosted Ubuntu runners already include the Android SDK.
+      # setup-android failed before Flutter could build; use the preinstalled SDK.
+      - name: Verify Android SDK
+        run: |
+          test -d "${ANDROID_HOME:-/opt/android-sdk}" || { echo 'ANDROID_HOME is unavailable'; exit 1; }
+          java -version
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - name: Build unsigned debug APK
+      - name: Precache Flutter Android artifacts
+        run: flutter precache --android
+      - name: Build debug APK
         working-directory: mobile
         run: |
           flutter pub get
