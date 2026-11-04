@@ -16,7 +16,7 @@ class StudioScreen extends ConsumerStatefulWidget {
 }
 class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserver {
   final form = GlobalKey<FormState>();
-  final title = TextEditingController(), instruction = TextEditingController(), caption = TextEditingController(), audience = TextEditingController(), hook = TextEditingController(), tags = TextEditingController(), cta = TextEditingController();
+  final title = TextEditingController(), instruction = TextEditingController(), caption = TextEditingController(), audience = TextEditingController(), hook = TextEditingController(), tags = TextEditingController(), cta = TextEditingController(), altText = TextEditingController();
   late final Workspace workspace;
   String platform = 'Instagram', goal = 'Educate', tone = 'Conversational', language = 'English', length = 'Medium', output = 'Text + image';
   String? imagePath;
@@ -36,14 +36,14 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     if (matches.isNotEmpty) {
       final p = matches.first, v = p.current;
       title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = workspace.cloudAuthenticated ? 'Synced to SHIFT Cloud' : 'Saved on this device';
-      instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? '';
+      instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? ''; altText.text = v.metadata['altText'] ?? '';
     }
     if (widget.sourceId != null) {
       final sources = workspace.bookmarks.where((b) => b.id == widget.sourceId);
       if (sources.isNotEmpty) { final b = sources.first; title.text = b.topic; instruction.text = 'Source: ${b.url}\nUnverified user notes: ${b.notes}'; }
     }
     if (matches.isEmpty) language = workspace.brand['language']?.isNotEmpty == true ? workspace.brand['language']! : 'English';
-    for (final c in [title, caption, hook, tags, instruction, audience, cta]) { c.addListener(changed); }
+    for (final c in [title, caption, hook, tags, instruction, audience, cta, altText]) { c.addListener(changed); }
   }
   void changed() {
     if (!mounted) return;
@@ -51,7 +51,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 900), () { if (caption.text.trim().isNotEmpty) save(quiet: true); });
   }
-  ContentVersion currentVersion() => ContentVersion(caption: caption.text.trim(), createdAt: DateTime.now(), imagePath: imagePath, platform: platform, headline: hook.text.trim(), hashtags: tags.text.trim(), metadata: {'instruction': instruction.text.trim(), 'goal': goal, 'tone': tone, 'language': language, 'length': length, 'output': output, 'audience': audience.text.trim(), 'cta': cta.text.trim(), if (widget.sourceId != null) 'sourceId': widget.sourceId!});
+  ContentVersion currentVersion() => ContentVersion(caption: caption.text.trim(), createdAt: DateTime.now(), imagePath: imagePath, platform: platform, headline: hook.text.trim(), hashtags: tags.text.trim(), metadata: {'instruction': instruction.text.trim(), 'goal': goal, 'tone': tone, 'language': language, 'length': length, 'output': output, 'audience': audience.text.trim(), 'cta': cta.text.trim(), 'altText': altText.text.trim(), if (widget.sourceId != null) 'sourceId': widget.sourceId!});
   Future<void> save({bool quiet = false}) async {
     if (saving || caption.text.trim().isEmpty) { if (!quiet && mounted) toast(context, 'Write a caption to save your draft.'); return; }
     debounce?.cancel();
@@ -176,7 +176,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       final old = workspace.posts.where((p) => p.id == id);
       workspace.savePost(LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions, v], plannedAt: old.isEmpty ? null : old.first.plannedAt, timezone: old.isEmpty ? '' : old.first.timezone));
     }
-    for (final c in [title, instruction, caption, audience, hook, tags, cta]) { c.dispose(); }
+    for (final c in [title, instruction, caption, audience, hook, tags, cta, altText]) { c.dispose(); }
     super.dispose();
   }
   Widget option(String label, String value, List<String> items, ValueChanged<String> change) => Padding(padding: const EdgeInsets.only(bottom: 16), child: DropdownButtonFormField<String>(value: value, isExpanded: true, decoration: InputDecoration(labelText: label), items: items.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) { change(v!); changed(); }));
@@ -191,7 +191,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
         if (!mounted) return;
         if (workspace.storageError != null) { toast(context, 'Save the current draft before starting another.'); return; }
         debounce?.cancel();
-        for (final c in [title, instruction, caption, hook, tags, cta]) { c.clear(); }
+        for (final c in [title, instruction, caption, hook, tags, cta, altText]) { c.clear(); }
         debounce?.cancel();
         setState(() { id = DateTime.now().microsecondsSinceEpoch.toString(); versions = []; imagePath = null; dirty = false; saveLabel = 'Not saved yet'; });
       }, icon: const Icon(Icons.add), label: const Text('New draft'))),
@@ -218,7 +218,14 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
         const SizedBox(height: 12), Field('Hashtags', controller: tags),
         Wrap(spacing: 8, runSpacing: 8, children: ['Regenerate text', 'Change tone', 'Shorten', 'Expand', 'Alternative hooks'].map((s) => OutlinedButton(onPressed: () => unavailable(context, s), child: Text(s))).toList()),
         const Section('Media'),
-        if (imagePath != null) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.file(File(imagePath!), height: 230, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Empty('Image unavailable', 'Choose a replacement from your device.'))),
+        if (imagePath != null) Semantics(
+          label:altText.text.trim().isEmpty ? 'Attached draft image' : altText.text.trim(),
+          image:true,
+          child:ClipRRect(borderRadius: BorderRadius.circular(16),
+            child:Image.file(File(imagePath!),height:230,fit:BoxFit.cover,
+              excludeFromSemantics:true,
+              errorBuilder:(_,__,___)=>const Empty('Image unavailable','Choose a replacement from your device.'))),
+        ),
         if (imagePath == null) const Empty('Add a visual', 'Upload an image from your device. AI-generated images need a connected service.', icon: Icons.image_outlined),
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
@@ -226,6 +233,14 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           OutlinedButton(onPressed: () => unavailable(context, 'Image generation'), child: const Text('Generate image')),
           if (imagePath != null) TextButton(onPressed: () { setState(() => imagePath = null); changed(); }, child: const Text('Remove image')),
         ]),
+        if(imagePath!=null) ...[
+          const SizedBox(height:12),
+          TextField(controller:altText,maxLength:300,
+            decoration:const InputDecoration(
+              labelText:'Accessible image description (alt text)',
+              hintText:'Describe what is visible for screen-reader users',
+            )),
+        ],
         const Section('Platform preview'),
         Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [const CircleAvatar(child: Icon(Icons.person_outline)), const SizedBox(width: 12), Expanded(child: Text(brandName, style: Theme.of(context).textTheme.titleMedium)), Text(platform)]),
