@@ -29,7 +29,7 @@ class SettingsScreen extends ConsumerWidget {
           ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
           ('AI preferences', 'Style, research and images', Icons.auto_awesome_outlined, '/settings/ai'),
           ('Automation', 'Rules, limits and posting windows', Icons.bolt_outlined, '/automation'),
-          ('Approvals', 'Review your local content', Icons.fact_check_outlined, '/approvals'),
+          ('Approvals', 'Review your drafts and cloud content', Icons.fact_check_outlined, '/approvals'),
           ('Appearance', 'Light, dark or system', Icons.contrast, '/settings/appearance'),
           ('Notifications', 'Choose what reaches you', Icons.notifications_outlined, '/settings/notifications'),
           ('Privacy & security', 'Data controls and sessions', Icons.lock_outline, '/settings/privacy'),
@@ -42,15 +42,15 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 20), const Panel(child: Text('SHIFT follows your device’s reduced-motion setting. Text sizes follow system accessibility preferences.')),
       ],
       if (section == 'notifications') ...[
-        const ServiceNotice(text: 'Preferences are saved on this device. Push delivery is not configured.'),
+        ServiceNotice(text: w.cloudAuthenticated ? 'Notification preferences sync to SHIFT Cloud. Push delivery is not configured.' : 'Offline preferences are saved on this device. Push delivery is not configured.'),
         ...w.notificationPreferences.keys.map((k) => SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(k), value: w.notificationPreferences[k]!, onChanged: (v) { w.notificationPreferences[k] = v; w.persist(); })),
         const Section('Delivery'),
         const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.phonelink_erase), title: Text('Push notifications'), subtitle: Text('Unavailable until mobile push services are connected')),
-        const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.notifications_none), title: Text('In-app notifications'), subtitle: Text('No server notifications received')),
+        const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.notifications_none), title: Text('In-app notifications'), subtitle: Text('Cloud notifications require a signed-in workspace; push delivery is not yet connected')),
       ],
       if (section == 'privacy') ...[
         const Heading('You stay in control.', 'Your local workspace and account data.'),
-        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, and newly saved text drafts sync to Supabase. Device-only drafts are not imported automatically; image files stay on this device.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
+        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, drafts and supported private images sync to Supabase. Offline drafts are imported only when you choose to import them.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
         const Section('Sessions & permissions'),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Session'), subtitle: Text(w.cloudAuthenticated ? 'Signed in: ${ShiftCloud.user?.email ?? 'SHIFT account'}' : 'Local workspace only')),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Connected app permissions'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
@@ -81,9 +81,9 @@ class SettingsScreen extends ConsumerWidget {
       ],
       if (section == 'help') ...[
         const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('The planned cloud service will. This frontend cannot research, generate or publish in the background. Local planning dates do not trigger posts.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Draft text, version history and preferences are in this app’s local storage. Uploaded photos are copied into app storage. Clearing data or uninstalling can remove them. Cloud sync has not been added.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('All nine destinations are available for draft previews and account setup. Live OAuth and posting are not connected. Personal account eligibility depends on each provider.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Yes, for approved posts scheduled to connected supported accounts. Supabase Cron checks the queue every minute even when SHIFT is closed. Local planning dates alone do not publish posts. Autonomous AI content creation remains paused.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('When signed into SHIFT Cloud, drafts, version history, settings and uploaded draft images sync to Supabase. Offline work remains on this device and must be explicitly imported. A local planning date is not a publishing schedule.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Bluesky direct account linking is implemented through a dedicated app password. Instagram, Facebook and other platforms still require OAuth developer credentials and publishing adapters. Postiz integration is preserved for VPS hosting.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
       ],
@@ -280,9 +280,9 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
   @override void dispose() { for (final c in fields.values) { c.dispose(); } super.dispose(); }
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Automation')), body: PageBody(children: [
     const Heading('Your rules.\nSHIFT follows.', 'Define the boundaries before automation begins.'),
-    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('Cloud automation inactive'), subtitle: Text('No worker, account or authorization connected.'))),
+    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('AI autopilot paused; manual Supabase scheduling active'), subtitle: Text('Supabase Cron can publish manually scheduled approved posts to supported accounts. AI autopilot and recurring AI tasks remain paused.'))),
     const SizedBox(height: 16),
-    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'Local pause preference saved. No cloud automation exists.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
+    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'AI autopilot remains paused; manually approved Supabase schedules are unaffected.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
     Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Section('Publishing mode'),
       ...['Manual', 'Approval required', 'Trusted Autopilot'].map((s) => RadioListTile<String>(contentPadding: EdgeInsets.zero, value: s, groupValue: mode, title: Text(s), subtitle: Text(s == 'Manual' ? 'Every publication needs your action.' : s == 'Approval required' ? 'Review exact content and destinations.' : 'Only within explicit account and content rules.'), onChanged: (v) => setState(() => mode = v!))),
