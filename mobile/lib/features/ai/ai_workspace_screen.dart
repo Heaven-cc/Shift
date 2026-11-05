@@ -19,7 +19,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     'improve':'Improve content'};
   final prompt=TextEditingController();
   final mediaPrompt=TextEditingController();
-  List<Map<String,dynamic>> nvidiaModels=[];
+  List<Map<String,dynamic>> nvidiaModels=[],mediaHistory=[];
   String? selectedModel,selectedSourcePath;
   Map<String,dynamic>? generatedMedia;
   bool mediaBusy=false;
@@ -88,7 +88,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     try{
       final res=await Future.wait([
         action('status'),action('history'),action('plan_items'),
-        nvidiaRequest('status'),
+        nvidiaRequest('status'),nvidiaRequest('history'),
       ]);
       if(!mounted)return;
       setState((){
@@ -99,6 +99,8 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
         history=(res[1]['history'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
         plans=(res[2]['items'] as List? ?? const [])
+          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
+        mediaHistory=(res[4]['items'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
         nvidiaModels=(res[3]['models'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
@@ -263,6 +265,23 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
               ),
             ],
           ],
+          const Section('Generated media history'),
+          const Text('Recent generated images and voice files are stored in your private SHIFT cloud workspace.'),
+          if(mediaHistory.isEmpty)
+            const Text('No NVIDIA media created yet.'),
+          ...mediaHistory.take(12).map((m)=>ListTile(
+            contentPadding:EdgeInsets.zero,
+            leading:Icon(m['type']=='voice'
+              ?Icons.record_voice_over_outlined:Icons.image_outlined),
+            title:Text((m['modelId']??'NVIDIA model').toString()),
+            subtitle:Text((m['prompt']??'').toString(),
+              maxLines:2,overflow:TextOverflow.ellipsis),
+            trailing:const Icon(Icons.open_in_new,size:18),
+            onTap:(){
+              final url=Uri.tryParse(m['url']?.toString()??'');
+              if(url!=null)launchUrl(url,mode:LaunchMode.externalApplication);
+            },
+          )),
           const Section('Cloud calendar proposals'),
           const Text('Accepting a proposal creates an unapproved draft and a planning date, not a publishing job.'),
           if(plans.isEmpty)const Empty('No proposals','Run the Content calendar task first.'),
