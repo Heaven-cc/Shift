@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import '../../core/state/workspace.dart';
 import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
+import '../../core/social/social_platforms.dart';
+import '../../core/social/platform_setup.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key, this.section});
@@ -80,7 +82,7 @@ class SettingsScreen extends ConsumerWidget {
         const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
         const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('The planned cloud service will. This frontend cannot research, generate or publish in the background. Local planning dates do not trigger posts.'))]),
         const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Draft text, version history and preferences are in this app’s local storage. Uploaded photos are copied into app storage. Clearing data or uninstalling can remove them. Cloud sync has not been added.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('No connections are operational yet. Initial publishing integrations are planned for Instagram professional accounts and Facebook Pages. Personal accounts are not promised.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('All nine destinations are available for draft previews and account setup. Live OAuth and posting are not connected. Personal account eligibility depends on each provider.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
       ],
@@ -152,24 +154,61 @@ class _PreferenceFormState extends ConsumerState<PreferenceForm> {
 }
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Social accounts')), body: PageBody(children: [
-    const Heading('Your presence.\nOne workspace.', 'Official connections, with clear permissions.'),
-    const ServiceNotice(text: 'OAuth is not connected. No account or token exists in this frontend.'),
-    ...[
-      ('Instagram', 'Professional Business / Creator accounts', 'Image publishing planned through the official API.'),
-      ('Facebook', 'Facebook Pages', 'Page posts planned through the official API.'),
-    ].map((p) => Padding(padding: const EdgeInsets.only(bottom: 16), child: Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(p.$1, style: Theme.of(context).textTheme.headlineSmall), const SizedBox(height: 8), Text(p.$2),
-      const SizedBox(height: 8), Text(p.$3), const SizedBox(height: 12),
-      const Text('Not connected\nGranted permissions: none\nAuthorization expiry: unavailable\nLast connection check: never', style: TextStyle(fontSize: 12)),
-      const SizedBox(height: 12), OutlinedButton(onPressed: () => unavailable(context, '${p.$1} account connection'), child: const Text('Connect account')),
-    ])))),
-    const Section('Planned integrations'),
-    ...['TikTok', 'LinkedIn', 'X', 'Threads', 'Pinterest'].map((p) => ListTile(contentPadding: EdgeInsets.zero, title: Text(p), subtitle: const Text('Planned • Automatic publishing unavailable'), trailing: const Icon(Icons.lock_clock_outlined))),
-    const Section('Manual export'),
-    const Text('Copy caption text from any draft and publish through the provider’s app. Uploaded images remain in the photo library you selected them from. SHIFT does not mark manual exports as published.'),
-    const SizedBox(height: 16), OutlinedButton(onPressed: () => context.push('/drafts'), child: const Text('Open draft library')),
-  ]));
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Social accounts')),
+    body: PageBody(children: [
+      const Heading('Your presence.\nOne workspace.', 'Manage destinations and prepare official account connections.'),
+      const ServiceNotice(
+        text: 'All destinations are visible. Account OAuth is not yet configured; none are connected, and no automated publishing is active.',
+      ),
+      const Section('Social destinations'),
+      ...ShiftSocialPlatforms.all.map((platform) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Panel(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(child: Text(platform.name,
+                  style: Theme.of(context).textTheme.titleMedium)),
+              const Icon(Icons.link_off, size: 18),
+            ]),
+            const SizedBox(height: 6),
+            Text(platform.accountRequirement),
+            const SizedBox(height: 6),
+            Text(platform.integrationLabel,
+                style: TextStyle(fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            Text(platform.publishingNote),
+            const SizedBox(height: 8),
+            const Text('Not connected • No permissions granted',
+                style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: () => showPlatformSetup(context, platform),
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                label: const Text('Connection setup'),
+              ),
+              TextButton(
+                onPressed: () => openPlatformHome(context, platform),
+                child: const Text('Open platform'),
+              ),
+            ]),
+          ],
+        )),
+      )),
+      const Section('Manual export'),
+      const Text('Copy content from a draft and publish through a platform directly. SHIFT does not mark manual exports as published. Social SDK is integrated separately for offline adapter validation; live OAuth and publishing need secure server configuration.'),
+      const SizedBox(height: 16),
+      OutlinedButton(
+        onPressed: () => context.push('/drafts'),
+        child: const Text('Open draft library'),
+      ),
+    ]),
+  );
 }
 class AutomationScreen extends ConsumerStatefulWidget {
   const AutomationScreen({super.key});
