@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
@@ -14,15 +15,83 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 class _DiscoverState extends ConsumerState<DiscoverScreen> {
   final query = TextEditingController();
   String filter = 'Saved';
+  bool researching = false, loadingHistory = false;
+  String? researchError;
+  List<Map<String,dynamic>> results = [];
+  List<Map<String,dynamic>> history = [];
+
+  @override void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => loadHistory());
+  }
+
+  Future<void> loadHistory() async {
+    final workspace = ref.read(workspaceProvider);
+    if (!workspace.cloudAuthenticated || !mounted) return;
+    setState(() => loadingHistory = true);
+    try {
+      final wid = workspace.cloudWorkspaceId!;
+      final items = await ShiftCloud.client.from('shift_research_jobs')
+        .select('query,status,result,completed_at').eq('workspace_id',wid)
+        .order('created_at',ascending:false).limit(20);
+      if (mounted) setState(() => history = List<Map<String,dynamic>>.from(items));
+    } catch(e) {
+      if(mounted) setState(() => researchError = 'Could not load research history: $e');
+    } finally {
+      if (mounted) setState(() => loadingHistory = false);
+    }
+  }
+
+  Future<void> research() async {
+    final prompt = query.text.trim();
+    if (prompt.length < 3) { toast(context, 'Enter a topic to research.'); return; }
+    if (!ref.read(workspaceProvider).cloudAuthenticated) {
+      toast(context, 'Sign in to SHIFT Cloud to research online.'); return;
+    }
+    if (researching) return;
+    setState(() { researching = true; researchError = null; });
+    try {
+      final response = await ShiftCloud.client.functions.invoke('shift-research', body: {
+        'query': prompt,
+        'request_id': 'research-${DateTime.now().microsecondsSinceEpoch}',
+      });
+      if (response.data is! Map) throw StateError('Research response was incomplete.');
+      final data = Map<String,dynamic>.from(response.data as Map);
+      if (data['error'] != null) {
+        if (data['error'] == 'research_not_configured') {
+          throw StateError('SHIFT needs a server-side Brave Search API key for live research.');
+        }
+        throw StateError(data['message']?.toString() ?? data['error'].toString());
+      }
+      final raw = data['results'];
+      final items = raw is List ? raw : const [];
+      if (mounted) setState(() {
+        results = items.map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+        filter = 'Results';
+      });
+      await loadHistory();
+    } catch(e) {
+      if(mounted) setState(() => researchError=e.toString().replaceFirst('Bad state: ',''));
+    } finally {
+      if(mounted) setState(()=>researching=false);
+    }
+  }
+
   @override void dispose() { query.dispose(); super.dispose(); }
   @override Widget build(BuildContext context) {
     final w = ref.watch(workspaceProvider);
     final matches = w.bookmarks.where((b) => b.topic.toLowerCase().contains(query.text.toLowerCase())).toList();
     return PageBody(children: [
       const Heading('Follow your curiosity.', 'Find an angle worth sharing. Keep the sources that matter.'),
-      TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) unavailable(context, 'Research'); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: () => query.text.trim().isEmpty ? toast(context, 'Enter a topic first.') : unavailable(context, 'Research'), icon: const Icon(Icons.arrow_forward)))),
-      const SizedBox(height: 16), const ServiceNotice(text: 'Live research is unavailable. Saved sources are user supplied and unverified.'),
-      Wrap(spacing: 8, children: ['Saved', 'Trending', 'For you', 'History'].map((s) => ChoiceChip(label: Text(s), selected: filter == s, onSelected: (_) => setState(() => filter = s))).toList()),
+      TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) research(); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: researching ? null : research, icon: const Icon(Icons.arrow_forward)))),
+      const SizedBox(height: 16),
+      ServiceNotice(text: w.cloudAuthenticated
+        ? 'Online research uses verified workspace settings and brand context. Search results are not independently fact-checked.'
+        : 'Offline workspace • Sign in to enable live research and cloud history.'),
+      if (researching) const LinearProgressIndicator(),
+      if (researchError != null) Padding(padding: const EdgeInsets.only(bottom: 12),
+        child: Text(researchError!,style:TextStyle(color:Theme.of(context).colorScheme.error))),
+      Wrap(spacing: 8, children: ['Saved', 'Results', 'Trending', 'For you', 'History'].map((s) => ChoiceChip(label: Text(s), selected: filter == s, onSelected: (_) => setState(() => filter = s))).toList()),
       if (w.interests.isNotEmpty) ...[
         const Section('Your interests'),
         Wrap(spacing: 8, runSpacing: 8, children: w.interests.map((s) => ActionChip(label: Text(s), onPressed: () { query.text = s; setState(() {}); })).toList()),
@@ -31,9 +100,66 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
         Section('Saved sources', action: TextButton.icon(onPressed: () => addSource(context, ref), icon: const Icon(Icons.add, size: 18), label: const Text('Add'))),
         if (matches.isEmpty) const Empty('Keep a source close', 'Save a public source URL with your notes. SHIFT has not verified it or extracted any claims.', icon: Icons.bookmark_border),
         ...matches.map((b) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Panel(child: ListTile(contentPadding: EdgeInsets.zero, title: Text(b.topic), subtitle: Text('${Uri.tryParse(b.url)?.host ?? b.url}\nUser supplied • Unverified'), isThreeLine: true, trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/research/${b.id}'))))),
+      ] else if (filter == 'History') ...[
+        Section('Saved online research',
+          action: TextButton.icon(onPressed:loadingHistory?null:loadHistory,
+            icon:const Icon(Icons.refresh),label:const Text('Refresh'))),
+        if(history.isEmpty) const Empty('No research history yet',
+          'Research a topic while signed in to save source discovery history online.',
+          icon:Icons.history),
+        ...history.map((item)=>Padding(padding:const EdgeInsets.only(bottom:8),
+          child:Panel(child:ListTile(
+            contentPadding:EdgeInsets.zero,title:Text(item['query']?.toString()??'Research topic'),
+            subtitle:Text('Status: ${item['status']} • ${item['completed_at']??'In progress'}'),
+            trailing:const Icon(Icons.chevron_right),
+            onTap:(){
+              final result=item['result'];
+              final all=result is Map ? result['results'] : null;
+              setState((){
+                results=all is List?all.map((v)=>Map<String,dynamic>.from(v as Map)).toList():[];
+                filter='Results';query.text=item['query']?.toString()??'';
+              });
+            },
+          )))),
       ] else ...[
-        Section(filter == 'Trending' ? 'Emerging topics' : filter == 'For you' ? 'Recommended angles' : 'Research history'),
-        Empty('No live research yet', 'Research results, provenance, retrieval dates and verification status will appear after the cloud research service is connected.', icon: Icons.travel_explore, action: OutlinedButton(onPressed: () => unavailable(context, 'Research'), child: const Text('Check research availability'))),
+        Section(filter == 'Trending' ? 'Research emerging topics' :
+          filter == 'For you' ? 'Research your brand interests' : 'Recent results'),
+        if (results.isEmpty) Empty('No research results',
+          'Submit a topic to search the web. A configured Brave Search key is required. Results are source leads, not verified claims.',
+          icon:Icons.travel_explore,
+          action:OutlinedButton(onPressed:researching?null:research,
+            child:const Text('Search this topic'))),
+        ...results.map((item) {
+          final url=item['url']?.toString()??'';
+          return Padding(padding:const EdgeInsets.only(bottom:10),
+            child:Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(item['title']?.toString()??'Result',
+                style:Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height:6),
+              Text(item['publisher']?.toString()??'Source',
+                style:const TextStyle(fontSize:12)),
+              const SizedBox(height:8),
+              Text(item['summary']?.toString()??'No summary available.'),
+              const SizedBox(height:8),
+              Wrap(spacing:8,runSpacing:8,children:[
+                TextButton.icon(onPressed:()=>launchUrl(Uri.parse(url),
+                  mode:LaunchMode.externalApplication), icon:const Icon(Icons.open_in_new),
+                  label:const Text('Open source')),
+                OutlinedButton(onPressed:() async {
+                  final bookmark=ResearchBookmark(
+                    id:DateTime.now().microsecondsSinceEpoch.toString(),
+                    topic:item['title']?.toString()??'Research source',url:url,
+                    notes:item['summary']?.toString()??'',
+                    publisher:item['publisher']?.toString()??'',
+                    savedAt:DateTime.now());
+                  final ok=await ref.read(workspaceProvider).addBookmark(bookmark);
+                  if(context.mounted)toast(context,ok?'Source saved in SHIFT.':'Unable to save source.');
+                },child:const Text('Save source')),
+              ]),
+              const Text('Source discovery • Not independently verified',
+                style:TextStyle(fontSize:11)),
+            ])));
+        }),
       ],
     ]);
   }
