@@ -133,6 +133,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       Wrap(spacing: 8, runSpacing: 8, children: [
         FilledButton.icon(onPressed: () => context.go('/create'),
           icon: const Icon(Icons.add), label: const Text('Create content')),
+        OutlinedButton.icon(onPressed: () => context.push('/ai-workspace'),
+          icon: const Icon(Icons.auto_awesome), label: const Text('SHIFT AI')),
         OutlinedButton.icon(onPressed: () => context.go('/discover'),
           icon: const Icon(Icons.search), label: const Text('Research')),
         OutlinedButton(onPressed: () => context.push('/drafts'),
