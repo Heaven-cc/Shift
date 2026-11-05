@@ -7,7 +7,7 @@
 - Flutter calls the authenticated `shift-postiz` Supabase Edge Function.
 - Postiz OAuth starts in a browser and ends at the Edge Function callback. It grants access to one Postiz workspace (not an unrestricted pool of social accounts).
 - Access tokens are encrypted with AES-GCM and saved in `shift_postiz_connections`, which grants no client access.
-- Posts can be submitted only after server-verified approval of their current saved version. Media and platform-specific posting modes are currently not enabled.
+- Posts can be submitted only after server-verified approval of their current saved version. Approved JPEG/PNG/WebP images can be securely downloaded from SHIFT Storage and uploaded to Postiz for supported destinations.
 - Postiz runs its own scheduled publishing infrastructure; SHIFT does not run a publishing worker.
 
 ## Setup to activate
@@ -26,12 +26,12 @@
 4. Deploy the `shift-postiz` Edge Function with gateway `verify_jwt=false` **only** because the OAuth callback cannot include user JWT. All non-callback requests explicitly call `auth.getUser` before accessing workspace data.
 5. Deploy the database migration and inspect RLS. Do not enable a separate SHIFT publishing worker.
 6. On a signed-in SHIFT account, open Social Accounts → Connect with Postiz → approve your Postiz workspace; add channels in Postiz and refresh SHIFT.
-7. Approve a cloud-synced draft, choose a connected text-capable destination, and manually submit a future scheduled time. Check the Postiz dashboard for queue state; ambiguous results must never be retried automatically.
+7. Approve a cloud-synced draft, choose a supported connected destination, and manually submit a future scheduled time. Check the Postiz dashboard for queue state; ambiguous results must never be retried automatically.
 
 ## Limitations
 
 - The pinned published `@opencoredev/social-sdk@0.5.0` does **not** expose `/cloud/postiz`; the current Postiz bridge uses Postiz's official public REST API alongside that pinned package. Do not claim that the newer unreleased adapter is installed.
 - No provider credentials or Postiz instance have been configured by this repository change.
-- Text-only manual scheduling is guarded to X, LinkedIn, Facebook Pages, Threads, Bluesky and other supported text providers. Instagram, TikTok, YouTube, Pinterest, media uploads, cancellations and remote-status reconciliation need separate provider-specific handling and validation.
+- Manual scheduling supports X, LinkedIn/LinkedIn Pages, Facebook Pages, Threads, Bluesky, and Instagram image posts. Uploaded images are checked against SHIFT's workspace-scoped media metadata and sent from private storage to Postiz. TikTok, YouTube, Pinterest, cancellation, and remote-status reconciliation need additional provider-specific handling and validation.
 - This starter bridge is for controlled integration; before general release, add stronger error reconciliation/status polling, media workflows, and a production security review.
 - The Postiz self-hosted service **does** need to stay running for scheduled publication; pausing SHIFT's own worker does not pause Postiz scheduled posts.
