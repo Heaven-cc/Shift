@@ -69,7 +69,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final post = LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions], status: changedContent && wasReviewed ? PostStatus.draft : old?.status ?? PostStatus.draft, plannedAt: old?.plannedAt, timezone: old?.timezone ?? '');
     final ok = await workspace.savePost(post);
     if (mounted) {
-      setState(() { saving = false; dirty = revision != savedRevision;
+      setState(() { saving = false; dirty = !ok || revision != savedRevision;
         saveLabel = ok ? '${workspace.cloudAuthenticated ? 'Saved to SHIFT Cloud' : 'Saved on device'} • v${versions.length}'
           : workspace.cloudAuthenticated ? 'Cloud save failed • retry required' : 'Device save failed • changes in memory'; });
       if (dirty) debounce = Timer(const Duration(milliseconds: 900), () => save(quiet: true));
