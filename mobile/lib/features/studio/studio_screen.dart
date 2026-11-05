@@ -128,6 +128,166 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     }
   }
 
+  /// AI never saves, approves or publishes without the user's explicit action.
+  Future<void> runAiTool(String mode) async {
+    if (generating) return;
+    if (!workspace.cloudAuthenticated) {
+      toast(context, 'Sign in to SHIFT Cloud to use AI tools.');
+      return;
+    }
+    final transformModes = {'rewrite', 'tone', 'shorten', 'expand', 'hooks', 'hashtags'};
+    final source = caption.text.trim();
+    if (transformModes.contains(mode) && source.length < 5) {
+      toast(context, 'Write or generate a caption before editing it with AI.');
+      return;
+    }
+    const tasks = <String,String>{
+      'rewrite':'Rewrite the caption for clarity and originality.',
+      'tone':'Match the chosen brand voice and tone.',
+      'shorten':'Create a concise version of this caption.',
+      'expand':'Develop this caption with more useful detail.',
+      'hooks':'Suggest three stronger opening hooks for this caption.',
+      'hashtags':'Suggest relevant hashtags for the caption.',
+      'ideas':'Develop five original content ideas aligned with my saved brand.',
+      'strategy':'Create an actionable content strategy for my saved brand.',
+    };
+    setState(() => generating = true);
+    try {
+      final response = await ShiftCloud.client.functions.invoke(
+        'shift-generate-text',
+        body: <String,dynamic>{
+          'prompt': [tasks[mode] ?? 'Improve my content.',
+            if (instruction.text.trim().isNotEmpty) instruction.text.trim()]
+              .join(' '),
+          'requestKey':'shift-ai-${DateTime.now().microsecondsSinceEpoch}',
+          'mode':mode,
+          'sourceText':source,
+          'goal':goal,
+          'tone':tone,
+          'platform':platform,
+          'language':language,
+          'audience':audience.text.trim(),
+          'length':length,
+        },
+      );
+      if (response.data is! Map) throw StateError('Invalid AI response.');
+      final data = Map<String,dynamic>.from(response.data as Map);
+      if (data['error'] != null) {
+        final code = data['error'].toString();
+        throw StateError(code == 'ai_provider_not_configured'
+          ? 'Groq API key and model must be configured in SHIFT Supabase.'
+          : 'AI operation unavailable: $code');
+      }
+      if (data['status'] != 'completed' || data['result'] is! Map) {
+        throw StateError('The AI request has not completed. Try again later.');
+      }
+      final result = Map<String,dynamic>.from(data['result'] as Map);
+      if (!mounted) return;
+      if (mode == 'ideas') {
+        final ideas = (result['ideas'] as List? ?? const [])
+            .whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+        if (ideas.isEmpty) throw StateError('The AI did not return content ideas.');
+        final picked = await showDialog<String>(
+          context:context,
+          builder:(dialog) => SimpleDialog(
+            title:const Text('Content ideas'),
+            children:[
+              const Padding(padding:EdgeInsets.symmetric(horizontal:24),
+                child:Text('Select an idea to add it to your instructions. Nothing is published.')),
+              ...ideas.map((idea) => SimpleDialogOption(
+                onPressed:()=>Navigator.pop(dialog,idea),
+                child:Padding(padding:const EdgeInsets.symmetric(vertical:8),
+                  child:Text(idea)),
+              )),
+              TextButton(onPressed:()=>Navigator.pop(dialog),
+                child:const Text('Close')),
+            ],
+          ),
+        );
+        if (picked != null && mounted) {
+          instruction.text = picked;
+          toast(context, 'Idea added to instructions. Generate when ready.');
+        }
+        return;
+      }
+      if (mode == 'strategy') {
+        final raw = result['strategy'];
+        final strategy = raw is Map
+          ? Map<String,dynamic>.from(raw) : <String,dynamic>{};
+        final pillars = (strategy['pillars'] as List? ?? const [])
+            .whereType<String>();
+        final experiments = (strategy['experiments'] as List? ?? const [])
+            .whereType<String>();
+        final summary = <String>[
+          if (strategy['positioning']?.toString().isNotEmpty == true)
+            'Positioning\n${strategy['positioning']}',
+          if (pillars.isNotEmpty) 'Content pillars\n${pillars.map((s)=>'• $s').join('\n')}',
+          if (strategy['cadence']?.toString().isNotEmpty == true)
+            'Cadence\n${strategy['cadence']}',
+          if (experiments.isNotEmpty)
+            'Experiments\n${experiments.map((s)=>'• $s').join('\n')}',
+          if (strategy.isEmpty) result['caption']?.toString() ?? '',
+        ].where((s) => s.isNotEmpty).join('\n\n');
+        await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(
+          title:const Text('Brand content strategy'),
+          content:SizedBox(width:440,child:SingleChildScrollView(
+            child:SelectableText(summary))),
+          actions:[TextButton(onPressed:()=>Navigator.pop(dialog),
+            child:const Text('Close'))],
+        ));
+        return;
+      }
+      final suggestion = (mode == 'hooks'
+          ? result['headline'] : mode == 'hashtags'
+          ? result['hashtags'] : result['caption'])?.toString().trim() ?? '';
+      if (suggestion.isEmpty) throw StateError('The AI did not return a usable suggestion.');
+      final extraHooks = (result['alternatives'] as List? ?? const [])
+          .whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+      final apply = await showDialog<bool>(context:context,builder:(dialog)=>AlertDialog(
+        title:Text(mode == 'hooks' ? 'Suggested hooks'
+            : mode == 'hashtags' ? 'Suggested hashtags' : 'Review AI edit'),
+        content:SizedBox(width:440,child:SingleChildScrollView(child:Column(
+          crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,
+          children:[
+            SelectableText(suggestion),
+            if (mode == 'hooks' && extraHooks.isNotEmpty) ...[
+              const SizedBox(height:12),
+              const Text('Other hooks'),
+              ...extraHooks.map((hook)=>Padding(
+                padding:const EdgeInsets.only(top:8),
+                child:SelectableText('• $hook'))),
+            ],
+            const SizedBox(height:12),
+            const Text('This is a draft suggestion. Review before saving or publishing.',
+              style:TextStyle(fontSize:12)),
+          ],
+        ))),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(dialog,false),
+            child:const Text('Keep original')),
+          FilledButton(onPressed:()=>Navigator.pop(dialog,true),
+            child:const Text('Apply suggestion')),
+        ],
+      ))??false;
+      if (!apply || !mounted) return;
+      if (mode == 'hooks') {
+        hook.text = suggestion;
+      } else if (mode == 'hashtags') {
+        tags.text = suggestion;
+      } else {
+        caption.text = suggestion;
+        final suggestedHook = result['headline']?.toString().trim() ?? '';
+        if (suggestedHook.isNotEmpty && hook.text.trim().isEmpty)
+          hook.text = suggestedHook;
+      }
+      toast(context, 'Suggestion applied locally. Save and review the new revision.');
+    } catch (e) {
+      if (mounted) toast(context, 'AI tool could not complete: $e');
+    } finally {
+      if (mounted) setState(() => generating = false);
+    }
+  }
+
   Future<void> pickImage() async {
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2048, maxHeight: 2048, imageQuality: 85);
@@ -193,7 +353,29 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
         Field('Caption', controller: caption, lines: 7),
         Align(alignment: Alignment.centerRight, child: Text('${caption.text.length} characters', style: const TextStyle(fontSize: 12))),
         const SizedBox(height: 12), Field('Hashtags', controller: tags),
-        Wrap(spacing: 8, runSpacing: 8, children: ['Regenerate text', 'Change tone', 'Shorten', 'Expand', 'Alternative hooks'].map((s) => OutlinedButton(onPressed: () => unavailable(context, s), child: Text(s))).toList()),
+        Wrap(spacing:8,runSpacing:8,children:[
+          for (final tool in const <(String,String)>[
+            ('Rewrite','rewrite'),('Change tone','tone'),
+            ('Shorten','shorten'),('Expand','expand'),
+            ('Alternative hooks','hooks'),('Suggest hashtags','hashtags'),
+          ]) OutlinedButton(
+            onPressed:generating?null:()=>runAiTool(tool.$2),
+            child:Text(tool.$1),
+          ),
+        ]),
+        const Section('AI content planning'),
+        Wrap(spacing:8,runSpacing:8,children:[
+          OutlinedButton.icon(
+            onPressed:generating?null:()=>runAiTool('ideas'),
+            icon:const Icon(Icons.lightbulb_outline),
+            label:const Text('Generate 5 ideas')),
+          OutlinedButton.icon(
+            onPressed:generating?null:()=>runAiTool('strategy'),
+            icon:const Icon(Icons.auto_graph),
+            label:const Text('Build content strategy')),
+        ]),
+        const Text('Suggestions use saved brand details and AI preferences. '
+          'Nothing is published automatically.',style:TextStyle(fontSize:12)),
         const Section('Media'),
         if (imagePath != null) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.file(File(imagePath!), height: 230, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Empty('Image unavailable', 'Choose a replacement from your device.'))),
         if (imagePath == null) const Empty('Add a visual', 'Upload an image from your device. AI-generated images need a connected service.', icon: Icons.image_outlined),
