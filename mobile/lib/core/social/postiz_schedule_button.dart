@@ -12,8 +12,8 @@ class PostizScheduleButton extends StatelessWidget {
       provider == 'linkedin-page' ? 'linkedin' : provider == 'instagram-standalone' ? 'instagram' : provider;
 
   static const textProviders = {
-    'x', 'linkedin', 'linkedin-page', 'facebook', 'threads', 'bluesky',
-    'mastodon', 'telegram',
+    'instagram', 'instagram-standalone', 'x', 'linkedin', 'linkedin-page',
+    'facebook', 'threads', 'bluesky',
   };
 
   Future<void> schedule(BuildContext context) async {
@@ -35,7 +35,7 @@ class PostizScheduleButton extends StatelessWidget {
       if (!context.mounted) return;
       if (matched.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No eligible text-only Postiz account matches this draft. Connect an account or edit the destination. Media scheduling is not enabled yet.')));
+          content: Text('No connected Postiz channel matches this destination. Connect the account in Postiz first.')));
         return;
       }
       final chosen = await showDialog<ShiftPostizChannel>(
