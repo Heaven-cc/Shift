@@ -385,18 +385,105 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
 }
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
-  @override ConsumerState<NotificationsScreen> createState() => _NotificationsState();
+  @override ConsumerState<NotificationsScreen> createState()=>_NotificationsState();
 }
 class _NotificationsState extends ConsumerState<NotificationsScreen> {
-  bool activity = false;
-  @override Widget build(BuildContext context) {
-    final w = ref.watch(workspaceProvider);
-    return Scaffold(appBar: AppBar(title: const Text('Your updates'), actions: [IconButton(tooltip: 'Notification preferences', onPressed: () => context.push('/settings/notifications'), icon: const Icon(Icons.tune))]), body: PageBody(children: [
-      SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Notifications')), ButtonSegment(value: true, label: Text('Local activity'))], selected: {activity}, onSelectionChanged: (v) => setState(() => activity = v.first)),
-      const SizedBox(height: 20),
-      if (!activity) const Empty('You’re all caught up', 'No server notifications have been received. Push delivery is not connected.', icon: Icons.notifications_none),
-      if (activity && w.activity.isEmpty) const Empty('A fresh start', 'Your local workspace changes will appear here.'),
-      if (activity) ...w.activity.map((a) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.history), title: Text(a['title']!), subtitle: Text('Local • ${DateFormat.MMMd().add_jm().format(DateTime.parse(a['at']!))}'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push(a['route']!))),
-    ]));
+  bool activity=false,loading=false;
+  String? error;
+  List<Map<String,dynamic>> notifications=[];
+  @override void initState(){
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());
+  }
+  Future<void> refresh() async {
+    final w=ref.read(workspaceProvider);
+    if(!mounted)return;
+    if(!w.cloudAuthenticated){
+      setState(()=>notifications=[]);
+      return;
+    }
+    setState((){loading=true;error=null;});
+    try{
+      final rows=await ShiftCloud.client.from('shift_notifications')
+        .select('id,kind,title,body,read_at,created_at,payload')
+        .eq('workspace_id',w.cloudWorkspaceId!)
+        .order('created_at',ascending:false).limit(100);
+      if(mounted)setState(()=>notifications=List<Map<String,dynamic>>.from(rows));
+    }catch(e){
+      if(mounted)setState(()=>error='Unable to load cloud notifications: $e');
+    }finally{
+      if(mounted)setState(()=>loading=false);
+    }
+  }
+  Future<void> markRead(Map<String,dynamic> item) async {
+    final w=ref.read(workspaceProvider);
+    if(!w.cloudAuthenticated||item['read_at']!=null)return;
+    try{
+      await ShiftCloud.client.from('shift_notifications').update({
+        'read_at':DateTime.now().toUtc().toIso8601String()
+      }).eq('id',item['id']).eq('workspace_id',w.cloudWorkspaceId!);
+      await refresh();
+    }catch(e){
+      if(mounted)toast(context,'Unable to mark notification as read: $e');
+    }
+  }
+  @override Widget build(BuildContext context){
+    final w=ref.watch(workspaceProvider);
+    return Scaffold(
+      appBar:AppBar(title:const Text('Your updates'),actions:[
+        IconButton(tooltip:'Refresh updates',onPressed:loading?null:refresh,
+          icon:const Icon(Icons.refresh)),
+        IconButton(tooltip:'Notification preferences',
+          onPressed:()=>context.push('/settings/notifications'),
+          icon:const Icon(Icons.tune)),
+      ]),
+      body:PageBody(children:[
+        SegmentedButton<bool>(segments:const [
+          ButtonSegment(value:false,label:Text('Notifications')),
+          ButtonSegment(value:true,label:Text('Activity')),
+        ],selected:{activity},
+          onSelectionChanged:(v)=>setState(()=>activity=v.first)),
+        const SizedBox(height:20),
+        if(!activity)...[
+          ServiceNotice(text:w.cloudAuthenticated
+            ?'Notifications are read from SHIFT Cloud. Push delivery is not configured yet.'
+            :'Offline workspace • Sign in to see server notifications.'),
+          if(loading)const LinearProgressIndicator(),
+          if(error!=null)Text(error!,
+            style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          if(!loading&&notifications.isEmpty)
+            const Empty('You’re all caught up',
+              'No cloud notifications have been received.',
+              icon:Icons.notifications_none),
+          ...notifications.map((item)=>Padding(
+            padding:const EdgeInsets.only(bottom:8),
+            child:Panel(child:ListTile(
+              contentPadding:EdgeInsets.zero,
+              leading:Icon(item['read_at']==null?
+                Icons.notifications_active_outlined:Icons.notifications_none),
+              title:Text(item['title']?.toString()??'SHIFT update'),
+              subtitle:Text(item['body']?.toString()??''),
+              trailing:item['read_at']==null
+                ?TextButton(onPressed:()=>markRead(item),child:const Text('Mark read'))
+                :null,
+              onTap:()=>markRead(item),
+            )))),
+        ]else...[
+          ServiceNotice(text:w.cloudAuthenticated
+            ?'Current-session activity. Scheduled publishing status is in Calendar.'
+            :'Offline activity is kept on this device.'),
+          if(w.activity.isEmpty)const Empty('A fresh start',
+            'Recent changes will appear here.'),
+          ...w.activity.map((a)=>ListTile(
+            contentPadding:EdgeInsets.zero,leading:const Icon(Icons.history),
+            title:Text(a['title']??'Activity'),
+            subtitle:Text(DateFormat.MMMd().add_jm()
+              .format(DateTime.parse(a['at']!))),
+            trailing:const Icon(Icons.chevron_right),
+            onTap:()=>context.push(a['route']!),
+          )),
+        ],
+      ]),
+    );
   }
 }
