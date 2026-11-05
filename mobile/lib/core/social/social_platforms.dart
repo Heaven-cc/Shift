@@ -21,8 +21,8 @@ class ShiftSocialPlatform {
   final bool directSdk;
 
   String get integrationLabel => directSdk
-      ? 'Social SDK 0.5.0 adapter • setup needed'
-      : 'Separate integration needed';
+      ? 'Postiz channel available after server setup'
+      : 'Postiz-supported channel • setup needed';
 }
 
 class ShiftSocialPlatforms {

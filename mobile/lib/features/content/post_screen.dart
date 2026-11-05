@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
 import '../../core/cloud/shift_cloud.dart';
+import '../../core/social/postiz_schedule_button.dart';
 import '../../core/ui/design.dart';
 
 class PostTile extends StatelessWidget {
@@ -92,13 +93,13 @@ class PostScreen extends ConsumerWidget {
         Text('Destination preview: ${v.platform}\nConnected account: none\nPublishing mode: ${w.preferences['mode'] ?? 'Approval required'}'),
         const SizedBox(height: 8),
         Text(p.plannedAt == null ? 'No local planning date' : 'Local planning date: ${DateFormat.yMMMd().add_jm().format(p.plannedAt!)}\nDevice timezone: ${p.timezone}\nUTC: ${p.plannedAt!.toUtc().toIso8601String()}'),
-        const SizedBox(height: 8), const Text('A planning date is a reminder in this app. It is not a server publishing schedule.', style: TextStyle(fontSize: 12)),
+        const SizedBox(height: 8), const Text('Local planning dates do not trigger publishing. Scheduling with Postiz is a separate explicit action after cloud approval and account connection.', style: TextStyle(fontSize: 12)),
       ])),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         FilledButton(onPressed: () => context.push('/edit/$id'), child: const Text('Edit draft')),
         OutlinedButton(onPressed: () => planPost(context, ref, p), child: Text(p.plannedAt == null ? 'Add planning date' : 'Reschedule local plan')),
-        OutlinedButton(onPressed: () => unavailable(context, 'Server scheduling'), child: const Text('Schedule to account')),
+        PostizScheduleButton(post: p),
         OutlinedButton(onPressed: () => unavailable(context, 'Publishing'), child: const Text('Publish now')),
         OutlinedButton(onPressed: () async { await Clipboard.setData(ClipboardData(text: [v.headline, v.caption, v.hashtags].where((s) => s.isNotEmpty).join('\n\n'))); if (context.mounted) toast(context, 'Caption copied. Publish manually in your social app.'); }, child: const Text('Copy for manual export')),
       ]),

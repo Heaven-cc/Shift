@@ -10,6 +10,7 @@ import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 import '../../core/social/social_platforms.dart';
 import '../../core/social/platform_setup.dart';
+import '../../core/social/postiz_connections_panel.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key, this.section});
@@ -161,8 +162,9 @@ class AccountsScreen extends StatelessWidget {
     body: PageBody(children: [
       const Heading('Your presence.\nOne workspace.', 'Manage destinations and prepare official account connections.'),
       const ServiceNotice(
-        text: 'All destinations are visible. Account OAuth is not yet configured; none are connected, and no automated publishing is active.',
+        text: 'Connect a Postiz workspace to see real connected channels. SHIFT background automation remains paused; Postiz scheduling is a separate manual action.',
       ),
+      const PostizConnectionsPanel(),
       const Section('Social destinations'),
       ...ShiftSocialPlatforms.all.map((platform) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
@@ -201,7 +203,7 @@ class AccountsScreen extends StatelessWidget {
         )),
       )),
       const Section('Manual export'),
-      const Text('Copy content from a draft and publish through a platform directly. SHIFT does not mark manual exports as published. Social SDK is integrated separately for offline adapter validation; live OAuth and publishing need secure server configuration.'),
+      const Text('Copy content from a draft and publish through a platform directly. SHIFT does not mark manual exports as published. Social SDK stays available for direct adapters. Postiz handles authorized account connections and manual scheduling once the server is configured.'),
       const SizedBox(height: 16),
       OutlinedButton(
         onPressed: () => context.push('/drafts'),

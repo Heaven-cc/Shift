@@ -23,7 +23,7 @@ Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platfor
             const SizedBox(height: 12),
             Text(platform.connectionNote),
             const SizedBox(height: 12),
-            const Text('Connection status: Not connected. Provider credentials and an approved server-side OAuth callback are required. Nothing will be published from this screen.'),
+            const Text('Connect your Postiz workspace using the connection panel, then add this social channel inside Postiz. Your self-hosted Postiz administrator may need to configure its platform API credentials first. No publishing happens from this screen.'),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () async {
@@ -38,7 +38,7 @@ Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platfor
                 }
               },
               icon: const Icon(Icons.open_in_new),
-              label: const Text('Open developer setup'),
+              label: const Text('Platform developer information'),
             ),
             const SizedBox(height: 8),
             OutlinedButton(
