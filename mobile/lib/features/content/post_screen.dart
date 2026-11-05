@@ -27,7 +27,8 @@ class _PostsState extends ConsumerState<PostsScreen> {
   String query = '', status = 'All';
   int limit = 30;
   @override Widget build(BuildContext context) {
-    final posts = ref.watch(workspaceProvider).posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
+    final w = ref.watch(workspaceProvider);
+    final posts = w.posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
     return Scaffold(appBar: AppBar(title: Text(widget.approvals ? 'Approval inbox' : 'Draft library')), body: PageBody(children: [
       ServiceNotice(text: widget.approvals
         ? (w.cloudAuthenticated ? 'Cloud approval inbox • Only approved revisions can be scheduled to connected accounts.'
