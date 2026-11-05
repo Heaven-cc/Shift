@@ -27,9 +27,14 @@ class _PostsState extends ConsumerState<PostsScreen> {
   String query = '', status = 'All';
   int limit = 30;
   @override Widget build(BuildContext context) {
-    final posts = ref.watch(workspaceProvider).posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
+    final w = ref.watch(workspaceProvider);
+    final posts = w.posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
     return Scaffold(appBar: AppBar(title: Text(widget.approvals ? 'Approval inbox' : 'Draft library')), body: PageBody(children: [
-      ServiceNotice(text: widget.approvals ? 'Local review queue • These decisions do not authorize server publishing.' : 'Saved on this device • No cloud sync'),
+      ServiceNotice(text: widget.approvals
+        ? (w.cloudAuthenticated ? 'Cloud approval inbox • Only approved revisions can be scheduled to connected accounts.'
+          : 'Offline review queue • Local decisions do not authorize cloud publishing.')
+        : (w.cloudAuthenticated ? 'Saved drafts are synced to your SHIFT Cloud workspace.'
+          : 'Offline drafts are saved on this device until you sign in and import them.')),
       TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
       const SizedBox(height: 12),
       if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => status = v!)),
@@ -80,7 +85,7 @@ class PostScreen extends ConsumerWidget {
     }
     return Scaffold(appBar: AppBar(title: const Text('Post details'), actions: [IconButton(tooltip: 'Edit draft', onPressed: () => context.push('/edit/$id'), icon: const Icon(Icons.edit_outlined))]), body: PageBody(children: [
       Heading(p.title, '${v.platform} • ${statusLabel(p.status)} • Version ${p.versions.length}'),
-      const ServiceNotice(text: 'Local content only • No social account selected or publication confirmed'),
+      ServiceNotice(text: w.cloudAuthenticated ? 'Saved in SHIFT Cloud • Select a connected account when scheduling. Publishing is confirmed by the server.' : 'Offline content only • Sign in for cloud approvals and scheduling.'),
       Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('PLATFORM PREVIEW', style: TextStyle(fontSize: 10, letterSpacing: 2)),
         const SizedBox(height: 12), Text(w.brand['name'] ?? 'Your brand', style: Theme.of(context).textTheme.titleMedium),
@@ -90,7 +95,7 @@ class PostScreen extends ConsumerWidget {
       ])),
       const Section('Plan & destination'),
       Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Destination preview: ${v.platform}\nConnected account: none\nPublishing mode: ${w.preferences['mode'] ?? 'Approval required'}'),
+        Text('Destination preview: ${v.platform}\nConnected account: selected during scheduling\nPublishing mode: ${w.preferences['mode'] ?? 'Approval required'}'),
         const SizedBox(height: 8),
         Text(p.plannedAt == null ? 'No local planning date' : 'Local planning date: ${DateFormat.yMMMd().add_jm().format(p.plannedAt!)}\nDevice timezone: ${p.timezone}\nUTC: ${p.plannedAt!.toUtc().toIso8601String()}'),
         const SizedBox(height: 8), const Text('Local planning dates do not trigger publishing. Scheduling with Supabase is a separate action after cloud approval and account connection. Postiz is preserved for later.', style: TextStyle(fontSize: 12)),
@@ -107,9 +112,9 @@ class PostScreen extends ConsumerWidget {
       const Text('Review applies to this exact content version and preview platform. Real approvals also require connected destination accounts.'),
       const SizedBox(height: 12),
       Wrap(spacing: 8, runSpacing: 8, children: [
-        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: const Text('Submit for local review')),
+        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: Text(w.cloudAuthenticated ? 'Submit for cloud review' : 'Submit for local review')),
         if (p.status == PostStatus.pendingApproval) ...[
-          FilledButton(onPressed: () async { if (await confirm(context, 'Approve local version ${p.versions.length}?', 'Approve this content for your local plan. This does not authorize publishing to an account.', action: 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: const Text('Approve locally')),
+          FilledButton(onPressed: () async { if (await confirm(context, w.cloudAuthenticated ? 'Approve cloud version ${p.versions.length}?' : 'Approve local version ${p.versions.length}?', w.cloudAuthenticated ? 'Approve this exact saved revision in SHIFT Cloud. You must still schedule it to a connected account.' : 'Approve this version locally. Local approval alone does not authorize publishing.', action: w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: Text(w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')),
           OutlinedButton(onPressed: () => change(PostStatus.draft, 'Returned to drafts'), child: const Text('Reject / return to draft')),
         ],
         OutlinedButton(onPressed: () => unavailable(context, 'AI regeneration'), child: const Text('Regenerate')),

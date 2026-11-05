@@ -1,4 +1,5 @@
 import 'dart:ui';
+import '../cloud/shift_cloud.dart';
 import 'package:flutter/material.dart';
 
 ThemeData shiftTheme(Brightness brightness) {
@@ -53,12 +54,18 @@ class Empty extends StatelessWidget {
   @override Widget build(BuildContext context) => Panel(child: Column(children: [const SizedBox(height: 12), Icon(icon, size: 32), const SizedBox(height: 16), Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center), const SizedBox(height: 8), Text(body, textAlign: TextAlign.center), if (action != null) Padding(padding: const EdgeInsets.only(top: 16), child: action!), const SizedBox(height: 12)]));
 }
 class ServiceNotice extends StatelessWidget {
-  const ServiceNotice({super.key, this.text = 'Local workspace • Cloud services are not connected'});
-  final String text;
-  @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.cloud_off_outlined, size: 16), const SizedBox(width: 8), Expanded(child: Text(text, style: const TextStyle(fontSize: 12)))]));
+  const ServiceNotice({super.key, this.text});
+  final String? text;
+  @override Widget build(BuildContext context) {
+    final connected = ShiftCloud.user != null;
+    final message = text ?? (connected
+      ? 'Signed in to SHIFT Cloud • Saved drafts and settings sync to Supabase.'
+      : 'Offline workspace • Sign in to SHIFT to sync across devices.');
+    return Padding(padding: const EdgeInsets.only(bottom: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(connected ? Icons.cloud_done_outlined : Icons.cloud_off_outlined, size: 16), const SizedBox(width: 8), Expanded(child: Text(message, style: const TextStyle(fontSize: 12)))]));
+  }
 }
 void toast(BuildContext context, String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-Future<void> unavailable(BuildContext context, String feature) => showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true, builder: (c) => SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Text('$feature is not connected', style: Theme.of(c).textTheme.headlineSmall), const SizedBox(height: 12), const Text('This frontend cannot run cloud jobs or access social accounts yet. No request has been sent and nothing has been published.'), const SizedBox(height: 20), FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Understood'))]))));
+Future<void> unavailable(BuildContext context, String feature) => showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true, builder: (c) => SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Text('$feature is not connected', style: Theme.of(c).textTheme.headlineSmall), const SizedBox(height: 12), const Text('This feature is not currently available for this account. Other SHIFT Cloud features may still work. No post has been published by this action.'), const SizedBox(height: 20), FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Understood'))]))));
 Future<bool> confirm(BuildContext context, String title, String body, {String action = 'Confirm'}) async => await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: Text(title), content: Text(body), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(action))])) ?? false;
 class Field extends StatelessWidget {
   const Field(this.label, {super.key, required this.controller, this.lines = 1, this.required = false, this.hint, this.keyboard});

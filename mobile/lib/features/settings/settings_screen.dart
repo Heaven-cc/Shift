@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -29,7 +30,7 @@ class SettingsScreen extends ConsumerWidget {
           ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
           ('AI preferences', 'Style, research and images', Icons.auto_awesome_outlined, '/settings/ai'),
           ('Automation', 'Rules, limits and posting windows', Icons.bolt_outlined, '/automation'),
-          ('Approvals', 'Review your local content', Icons.fact_check_outlined, '/approvals'),
+          ('Approvals', 'Review your drafts and cloud content', Icons.fact_check_outlined, '/approvals'),
           ('Appearance', 'Light, dark or system', Icons.contrast, '/settings/appearance'),
           ('Notifications', 'Choose what reaches you', Icons.notifications_outlined, '/settings/notifications'),
           ('Privacy & security', 'Data controls and sessions', Icons.lock_outline, '/settings/privacy'),
@@ -42,15 +43,15 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 20), const Panel(child: Text('SHIFT follows your device’s reduced-motion setting. Text sizes follow system accessibility preferences.')),
       ],
       if (section == 'notifications') ...[
-        const ServiceNotice(text: 'Preferences are saved on this device. Push delivery is not configured.'),
+        ServiceNotice(text: w.cloudAuthenticated ? 'Notification preferences sync to SHIFT Cloud. Push delivery is not configured.' : 'Offline preferences are saved on this device. Push delivery is not configured.'),
         ...w.notificationPreferences.keys.map((k) => SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(k), value: w.notificationPreferences[k]!, onChanged: (v) { w.notificationPreferences[k] = v; w.persist(); })),
         const Section('Delivery'),
         const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.phonelink_erase), title: Text('Push notifications'), subtitle: Text('Unavailable until mobile push services are connected')),
-        const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.notifications_none), title: Text('In-app notifications'), subtitle: Text('No server notifications received')),
+        const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.notifications_none), title: Text('In-app notifications'), subtitle: Text('Cloud notifications require a signed-in workspace; push delivery is not yet connected')),
       ],
       if (section == 'privacy') ...[
         const Heading('You stay in control.', 'Your local workspace and account data.'),
-        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, and newly saved text drafts sync to Supabase. Device-only drafts are not imported automatically; image files stay on this device.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
+        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, drafts and supported private images sync to Supabase. Offline drafts are imported only when you choose to import them.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
         const Section('Sessions & permissions'),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Session'), subtitle: Text(w.cloudAuthenticated ? 'Signed in: ${ShiftCloud.user?.email ?? 'SHIFT account'}' : 'Local workspace only')),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Connected app permissions'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
@@ -81,9 +82,9 @@ class SettingsScreen extends ConsumerWidget {
       ],
       if (section == 'help') ...[
         const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('The planned cloud service will. This frontend cannot research, generate or publish in the background. Local planning dates do not trigger posts.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Draft text, version history and preferences are in this app’s local storage. Uploaded photos are copied into app storage. Clearing data or uninstalling can remove them. Cloud sync has not been added.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('All nine destinations are available for draft previews and account setup. Live OAuth and posting are not connected. Personal account eligibility depends on each provider.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Yes, for approved posts scheduled to connected supported accounts. Supabase Cron checks the queue every minute even when SHIFT is closed. Local planning dates alone do not publish posts. Autonomous AI content creation remains paused.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('When signed into SHIFT Cloud, drafts, version history, settings and uploaded draft images sync to Supabase. Offline work remains on this device and must be explicitly imported. A local planning date is not a publishing schedule.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Bluesky direct account linking is implemented through a dedicated app password. Instagram, Facebook and other platforms still require OAuth developer credentials and publishing adapters. Postiz integration is preserved for VPS hosting.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
       ],
@@ -91,67 +92,165 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 class PreferenceForm extends ConsumerStatefulWidget {
-  const PreferenceForm({super.key, required this.section});
+  const PreferenceForm({super.key,required this.section});
   final String section;
-  @override ConsumerState<PreferenceForm> createState() => _PreferenceFormState();
+  @override ConsumerState<PreferenceForm> createState()=>_PreferenceFormState();
 }
 class _PreferenceFormState extends ConsumerState<PreferenceForm> {
-  final form = GlobalKey<FormState>();
-  final fields = <String, TextEditingController>{};
-  String? logo;
-  bool busy = false;
-  Map<String, String> get labels => switch(widget.section) {
-    'profile' => {'name': 'Display name', 'email': 'Contact email (local only)', 'language': 'Preferred language', 'timezone': 'Timezone (IANA name, e.g. Africa/Lagos)'},
-    'brand' => {'name': 'Brand or creator name', 'description': 'Description', 'niche': 'Content niche', 'audience': 'Target audience', 'market': 'Country / primary market', 'language': 'Language', 'tone': 'Writing tone', 'topics': 'Preferred topics', 'blocked': 'Blocked topics', 'colors': 'Optional brand colors', 'guidelines': 'Brand guidelines'},
-    _ => {'style': 'Writing style', 'length': 'Preferred content length', 'language': 'Content language', 'images': 'Image preferences', 'categories': 'Research categories', 'avoid': 'Topics to avoid'},
+  final form=GlobalKey<FormState>();
+  final fields=<String,TextEditingController>{};
+  String? imagePath;
+  bool busy=false;
+  Map<String,String> get labels => switch(widget.section) {
+    'profile'=>{'name':'Display name','email':'Sign-in email',
+      'language':'Preferred language','timezone':'Timezone (e.g. Africa/Lagos)'},
+    'brand'=>{'name':'Brand or creator name','description':'Description',
+      'niche':'Content niche','audience':'Target audience',
+      'market':'Country / primary market','language':'Language',
+      'tone':'Writing tone','topics':'Preferred topics',
+      'blocked':'Blocked topics','colors':'Brand colors',
+      'guidelines':'Brand guidelines'},
+    _=>{'style':'Writing style','length':'Preferred content length',
+      'language':'Content language','images':'Image preferences',
+      'categories':'Research categories','avoid':'Topics to avoid'},
   };
-  @override void initState() {
+  @override void initState(){
     super.initState();
-    final w = ref.read(workspaceProvider);
-    final source = widget.section == 'profile' ? w.profile : widget.section == 'brand' ? w.brand : w.preferences;
-    for (final k in labels.keys) { fields[k] = TextEditingController(text: source[k] ?? ''); }
-    logo = source['logo'];
+    final w=ref.read(workspaceProvider);
+    final source=widget.section=='profile'?w.profile:
+      widget.section=='brand'?w.brand:w.preferences;
+    for(final k in labels.keys){fields[k]=TextEditingController(text:source[k]??'');}
+    imagePath=source[widget.section=='profile'?'avatar':'logo'];
   }
-  @override void dispose() { for (final c in fields.values) { c.dispose(); } super.dispose(); }
-  Future<void> chooseLogo() async {
-    try {
-      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 512, imageQuality: 85);
-      if (file == null) return;
-      final dir = await getApplicationDocumentsDirectory();
-      final folder = Directory('${dir.path}/shift_brand'); await folder.create(recursive: true);
-      final path = '${folder.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
-      await file.saveTo(path);
-      if (mounted) setState(() => logo = path);
-    } catch (_) { if (mounted) toast(context, 'Photo could not be selected. Check permissions.'); }
+  @override void dispose(){
+    for(final c in fields.values){c.dispose();}
+    super.dispose();
   }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.section == 'profile' ? 'Profile' : widget.section == 'brand' ? 'Brand identity' : 'AI preferences')), body: PageBody(children: [
-    const ServiceNotice(text: 'Saved on this device • These settings do not configure a cloud account'),
-    Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (widget.section != 'ai') ...[
-        if (logo != null) Align(child: ClipRRect(borderRadius: BorderRadius.circular(30), child: Image.file(File(logo!), width: 72, height: 72, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person_outline, size: 48)))),
-        OutlinedButton.icon(onPressed: chooseLogo, icon: const Icon(Icons.add_photo_alternate_outlined), label: Text(widget.section == 'brand' ? 'Choose optional logo' : 'Choose avatar')),
-        const SizedBox(height: 16),
-      ],
-      ...labels.entries.map((e) => Padding(padding: const EdgeInsets.only(bottom: 16), child: TextFormField(controller: fields[e.key], maxLines: ['description', 'guidelines', 'blocked', 'topics', 'avoid', 'images'].contains(e.key) ? 3 : 1, decoration: InputDecoration(labelText: e.value), validator: (v) {
-        if (e.key == 'name' && (v?.trim().isEmpty ?? true)) return 'Enter a name';
-        if (e.key == 'email' && v?.isNotEmpty == true && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v!)) return 'Enter a valid email';
-        if (e.key == 'timezone' && v?.isNotEmpty == true && !RegExp(r'^[A-Za-z_]+/[A-Za-z_]+(?:/[A-Za-z_]+)?$').hasMatch(v!)) return 'Use an IANA name such as Africa/Lagos';
-        return null;
-      }))),
-      if (widget.section == 'profile') const Text('Timezone is a preference for the future cloud scheduler. Local planning uses the device timezone. Email changes do not update an authentication account.', style: TextStyle(fontSize: 12)),
-      const SizedBox(height: 20),
-      FilledButton(onPressed: busy ? null : () async {
-        if (!form.currentState!.validate()) return;
-        setState(() => busy = true);
-        final w = ref.read(workspaceProvider);
-        final values = {for (final e in fields.entries) e.key: e.value.text.trim(), if (logo != null) 'logo': logo!};
-        if (widget.section == 'profile') { w.profile.addAll(values); } else if (widget.section == 'brand') { w.brand.addAll(values); } else { w.preferences.addAll(values); }
-        w.record('Local ${widget.section} settings updated', '/settings/${widget.section}');
-        final ok = await w.persist();
-        if (mounted) { setState(() => busy = false); toast(context, ok ? 'Preferences saved on this device.' : 'Changes could not be saved to device storage.'); }
-      }, child: Text(busy ? 'Saving…' : 'Save preferences')),
-    ])),
-  ]));
+  Future<void> chooseImage() async {
+    try{
+      final image=await ImagePicker().pickImage(source:ImageSource.gallery,
+        maxWidth:512,imageQuality:85);
+      if(image==null)return;
+      if(await image.length()>10*1024*1024){
+        if(mounted)toast(context,'Choose an image under 10 MB.');return;
+      }
+      final dir=await getApplicationDocumentsDirectory();
+      final folder=Directory(dir.path+'/shift_identity');
+      await folder.create(recursive:true);
+      final name=DateTime.now().microsecondsSinceEpoch.toString()+'.jpg';
+      final file=File(folder.path+'/'+name);
+      await image.saveTo(file.path);
+      if(mounted)setState(()=>imagePath=file.path);
+    }catch(e){if(mounted)toast(context,'Unable to select image: $e');}
+  }
+  Future<void> changeEmail() async {
+    if(ShiftCloud.user==null)return;
+    final email=TextEditingController(text:ShiftCloud.user?.email??'');
+    final next=await showDialog<String>(context:context,builder:(dialog)=>
+      AlertDialog(
+        title:const Text('Change sign-in email'),
+        content:TextField(controller:email,
+          keyboardType:TextInputType.emailAddress,
+          decoration:const InputDecoration(labelText:'New email address')),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Cancel')),
+          FilledButton(onPressed:()=>Navigator.pop(dialog,email.text.trim()),
+            child:const Text('Request verification')),
+        ],
+      ));
+    await Future<void>.delayed(const Duration(milliseconds:250));
+    email.dispose();
+    if(next==null||next.isEmpty)return;
+    if(!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(next)){
+      if(mounted)toast(context,'Enter a valid email.');return;
+    }
+    try{
+      await ShiftCloud.client.auth.updateUser(UserAttributes(email:next));
+      if(mounted)toast(context,'Email update requested. Verify using the confirmation emails.');
+    }catch(e){if(mounted)toast(context,'Email update failed: $e');}
+  }
+  Future<void> save() async {
+    if(!form.currentState!.validate()||busy)return;
+    setState(()=>busy=true);
+    final w=ref.read(workspaceProvider);
+    final values={for(final e in fields.entries)e.key:e.value.text.trim()};
+    bool saved=false;
+    try{
+      if(imagePath!=null&&widget.section!='ai'){
+        final k=widget.section=='profile'?'avatar':'logo';
+        final previous=widget.section=='profile'?w.profile[k]:w.brand[k];
+        values[k]=imagePath!;
+        if(w.cloudAuthenticated&&imagePath!=previous){
+          final remote=await ShiftCloud.uploadIdentityImage(
+            w.cloudWorkspaceId!,File(imagePath!),
+            widget.section=='profile'?'avatar':'brand');
+          values[widget.section=='profile'?'avatarCloudPath':'logoCloudPath']=remote;
+        }
+      }
+      saved=await w.updateSettings(widget.section,values);
+    }catch(e){
+      if(mounted)toast(context,'Save failed: $e');
+    }finally{
+      if(mounted)setState(()=>busy=false);
+    }
+    if(mounted)toast(context,saved
+      ?(w.cloudAuthenticated?'Saved to SHIFT Cloud.':'Saved on this device.')
+      :'Save failed. Previous settings were restored.');
+  }
+  @override Widget build(BuildContext context){
+    final cloud=ref.watch(workspaceProvider).cloudAuthenticated;
+    return Scaffold(appBar:AppBar(title:Text(
+      widget.section=='profile'?'Profile':
+      widget.section=='brand'?'Brand identity':'AI preferences')),
+      body:PageBody(children:[
+        ServiceNotice(text:cloud
+          ?'Your settings are saved to your authenticated SHIFT workspace.'
+          :'Offline settings are device-only. Sign in for cloud sync.'),
+        Form(key:form,child:Column(
+          crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            if(widget.section!='ai') ...[
+              if(imagePath!=null)Align(child:ClipRRect(
+                borderRadius:BorderRadius.circular(30),
+                child:Image.file(File(imagePath!),width:72,height:72,
+                  fit:BoxFit.cover,errorBuilder:(_,__,___)=>
+                    const Icon(Icons.person_outline,size:48)))),
+              OutlinedButton.icon(onPressed:chooseImage,
+                icon:const Icon(Icons.add_photo_alternate_outlined),
+                label:Text(widget.section=='brand'?'Choose logo':'Choose avatar')),
+              const SizedBox(height:16),
+            ],
+            ...labels.entries.map((e)=>Padding(
+              padding:const EdgeInsets.only(bottom:16),
+              child:TextFormField(controller:fields[e.key],
+                readOnly:cloud&&widget.section=='profile'&&e.key=='email',
+                maxLines:['description','guidelines','blocked','topics','avoid','images']
+                  .contains(e.key)?3:1,
+                decoration:InputDecoration(labelText:e.value),
+                validator:(v){
+                  if(e.key=='name'&&(v?.trim().isEmpty??true))return 'Enter a name';
+                  if(e.key=='email'&&v?.isNotEmpty==true&&
+                    !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v!))
+                    return 'Enter a valid email';
+                  if(e.key=='timezone'&&v?.isNotEmpty==true&&
+                    !RegExp(r'^[A-Za-z_]+/[A-Za-z_]+(?:/[A-Za-z_]+)?$').hasMatch(v!))
+                    return 'Use an IANA timezone, such as Africa/Lagos';
+                  return null;
+                },
+              ))),
+            if(widget.section=='profile') ...[
+              const Text('Your timezone is synced to SHIFT Cloud. Scheduled UTC times are displayed locally.',
+                style:TextStyle(fontSize:12)),
+              if(cloud)TextButton.icon(onPressed:changeEmail,
+                icon:const Icon(Icons.alternate_email),
+                label:const Text('Change account email')),
+            ],
+            const SizedBox(height:20),
+            FilledButton(onPressed:busy?null:save,
+              child:Text(busy?'Saving…':'Save preferences')),
+          ])),
+      ]),
+    );
+  }
 }
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
@@ -239,9 +338,9 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
   @override void dispose() { for (final c in fields.values) { c.dispose(); } super.dispose(); }
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Automation')), body: PageBody(children: [
     const Heading('Your rules.\nSHIFT follows.', 'Define the boundaries before automation begins.'),
-    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('Cloud automation inactive'), subtitle: Text('No worker, account or authorization connected.'))),
+    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('AI autopilot paused; manual Supabase scheduling active'), subtitle: Text('Supabase Cron can publish manually scheduled approved posts to supported accounts. AI autopilot and recurring AI tasks remain paused.'))),
     const SizedBox(height: 16),
-    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'Local pause preference saved. No cloud automation exists.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
+    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'AI autopilot remains paused; manually approved Supabase schedules are unaffected.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
     Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Section('Publishing mode'),
       ...['Manual', 'Approval required', 'Trusted Autopilot'].map((s) => RadioListTile<String>(contentPadding: EdgeInsets.zero, value: s, groupValue: mode, title: Text(s), subtitle: Text(s == 'Manual' ? 'Every publication needs your action.' : s == 'Approval required' ? 'Review exact content and destinations.' : 'Only within explicit account and content rules.'), onChanged: (v) => setState(() => mode = v!))),
@@ -287,18 +386,105 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
 }
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
-  @override ConsumerState<NotificationsScreen> createState() => _NotificationsState();
+  @override ConsumerState<NotificationsScreen> createState()=>_NotificationsState();
 }
 class _NotificationsState extends ConsumerState<NotificationsScreen> {
-  bool activity = false;
-  @override Widget build(BuildContext context) {
-    final w = ref.watch(workspaceProvider);
-    return Scaffold(appBar: AppBar(title: const Text('Your updates'), actions: [IconButton(tooltip: 'Notification preferences', onPressed: () => context.push('/settings/notifications'), icon: const Icon(Icons.tune))]), body: PageBody(children: [
-      SegmentedButton<bool>(segments: const [ButtonSegment(value: false, label: Text('Notifications')), ButtonSegment(value: true, label: Text('Local activity'))], selected: {activity}, onSelectionChanged: (v) => setState(() => activity = v.first)),
-      const SizedBox(height: 20),
-      if (!activity) const Empty('You’re all caught up', 'No server notifications have been received. Push delivery is not connected.', icon: Icons.notifications_none),
-      if (activity && w.activity.isEmpty) const Empty('A fresh start', 'Your local workspace changes will appear here.'),
-      if (activity) ...w.activity.map((a) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.history), title: Text(a['title']!), subtitle: Text('Local • ${DateFormat.MMMd().add_jm().format(DateTime.parse(a['at']!))}'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push(a['route']!))),
-    ]));
+  bool activity=false,loading=false;
+  String? error;
+  List<Map<String,dynamic>> notifications=[];
+  @override void initState(){
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());
+  }
+  Future<void> refresh() async {
+    final w=ref.read(workspaceProvider);
+    if(!mounted)return;
+    if(!w.cloudAuthenticated){
+      setState(()=>notifications=[]);
+      return;
+    }
+    setState((){loading=true;error=null;});
+    try{
+      final rows=await ShiftCloud.client.from('shift_notifications')
+        .select('id,kind,title,body,read_at,created_at,payload')
+        .eq('workspace_id',w.cloudWorkspaceId!)
+        .order('created_at',ascending:false).limit(100);
+      if(mounted)setState(()=>notifications=List<Map<String,dynamic>>.from(rows));
+    }catch(e){
+      if(mounted)setState(()=>error='Unable to load cloud notifications: $e');
+    }finally{
+      if(mounted)setState(()=>loading=false);
+    }
+  }
+  Future<void> markRead(Map<String,dynamic> item) async {
+    final w=ref.read(workspaceProvider);
+    if(!w.cloudAuthenticated||item['read_at']!=null)return;
+    try{
+      await ShiftCloud.client.from('shift_notifications').update({
+        'read_at':DateTime.now().toUtc().toIso8601String()
+      }).eq('id',item['id']).eq('workspace_id',w.cloudWorkspaceId!);
+      await refresh();
+    }catch(e){
+      if(mounted)toast(context,'Unable to mark notification as read: $e');
+    }
+  }
+  @override Widget build(BuildContext context){
+    final w=ref.watch(workspaceProvider);
+    return Scaffold(
+      appBar:AppBar(title:const Text('Your updates'),actions:[
+        IconButton(tooltip:'Refresh updates',onPressed:loading?null:refresh,
+          icon:const Icon(Icons.refresh)),
+        IconButton(tooltip:'Notification preferences',
+          onPressed:()=>context.push('/settings/notifications'),
+          icon:const Icon(Icons.tune)),
+      ]),
+      body:PageBody(children:[
+        SegmentedButton<bool>(segments:const [
+          ButtonSegment(value:false,label:Text('Notifications')),
+          ButtonSegment(value:true,label:Text('Activity')),
+        ],selected:{activity},
+          onSelectionChanged:(v)=>setState(()=>activity=v.first)),
+        const SizedBox(height:20),
+        if(!activity)...[
+          ServiceNotice(text:w.cloudAuthenticated
+            ?'Notifications are read from SHIFT Cloud. Push delivery is not configured yet.'
+            :'Offline workspace • Sign in to see server notifications.'),
+          if(loading)const LinearProgressIndicator(),
+          if(error!=null)Text(error!,
+            style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          if(!loading&&notifications.isEmpty)
+            const Empty('You’re all caught up',
+              'No cloud notifications have been received.',
+              icon:Icons.notifications_none),
+          ...notifications.map((item)=>Padding(
+            padding:const EdgeInsets.only(bottom:8),
+            child:Panel(child:ListTile(
+              contentPadding:EdgeInsets.zero,
+              leading:Icon(item['read_at']==null?
+                Icons.notifications_active_outlined:Icons.notifications_none),
+              title:Text(item['title']?.toString()??'SHIFT update'),
+              subtitle:Text(item['body']?.toString()??''),
+              trailing:item['read_at']==null
+                ?TextButton(onPressed:()=>markRead(item),child:const Text('Mark read'))
+                :null,
+              onTap:()=>markRead(item),
+            )))),
+        ]else...[
+          ServiceNotice(text:w.cloudAuthenticated
+            ?'Current-session activity. Scheduled publishing status is in Calendar.'
+            :'Offline activity is kept on this device.'),
+          if(w.activity.isEmpty)const Empty('A fresh start',
+            'Recent changes will appear here.'),
+          ...w.activity.map((a)=>ListTile(
+            contentPadding:EdgeInsets.zero,leading:const Icon(Icons.history),
+            title:Text(a['title']??'Activity'),
+            subtitle:Text(DateFormat.MMMd().add_jm()
+              .format(DateTime.parse(a['at']!))),
+            trailing:const Icon(Icons.chevron_right),
+            onTap:()=>context.push(a['route']!),
+          )),
+        ],
+      ]),
+    );
   }
 }

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
+import '../../core/cloud/shift_cloud.dart';
 import '../../core/ui/design.dart';
 import '../../core/social/social_platforms.dart';
 
@@ -22,7 +23,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
   String? imagePath;
   late String id;
   List<ContentVersion> versions = [];
-  bool saving = false, dirty = false, missing = false;
+  bool saving = false, generating = false, dirty = false, missing = false;
   String saveLabel = 'Not saved yet';
   Timer? debounce;
   int revision = 0;
@@ -35,7 +36,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     if (widget.postId != null && matches.isEmpty) missing = true;
     if (matches.isNotEmpty) {
       final p = matches.first, v = p.current;
-      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = 'Saved on this device';
+      title.text = p.title; caption.text = v.caption; hook.text = v.headline; tags.text = v.hashtags; platform = v.platform; imagePath = v.imagePath; versions = [...p.versions]; saveLabel = workspace.cloudAuthenticated ? 'Saved in SHIFT Cloud' : 'Saved on this device';
       instruction.text = v.metadata['instruction'] ?? ''; goal = v.metadata['goal'] ?? goal; tone = v.metadata['tone'] ?? tone; language = v.metadata['language'] ?? language; length = v.metadata['length'] ?? length; output = v.metadata['output'] ?? output; audience.text = v.metadata['audience'] ?? ''; cta.text = v.metadata['cta'] ?? '';
     }
     if (widget.sourceId != null) {
@@ -68,11 +69,63 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final post = LocalPost(id: id, title: title.text.trim().isEmpty ? 'Untitled post' : title.text.trim(), versions: [...versions], status: changedContent && wasReviewed ? PostStatus.draft : old?.status ?? PostStatus.draft, plannedAt: old?.plannedAt, timezone: old?.timezone ?? '');
     final ok = await workspace.savePost(post);
     if (mounted) {
-      setState(() { saving = false; dirty = revision != savedRevision; saveLabel = ok ? 'Saved on this device • v${versions.length}' : 'Storage failed • changes in memory'; });
+      setState(() { saving = false; dirty = revision != savedRevision;
+        saveLabel = ok ? '${workspace.cloudAuthenticated ? 'Saved to SHIFT Cloud' : 'Saved on device'} • v${versions.length}'
+          : workspace.cloudAuthenticated ? 'Cloud save failed • retry required' : 'Device save failed • changes in memory'; });
       if (dirty) debounce = Timer(const Duration(milliseconds: 900), () => save(quiet: true));
-      if (!quiet) toast(context, ok ? 'Draft saved locally.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}' : 'Device storage failed. Retry saving.');
+      if (!quiet) toast(context, ok ? 'Draft saved ${workspace.cloudAuthenticated ? 'to SHIFT Cloud' : 'on this device'}.${changedContent && wasReviewed ? ' Content changed; review is required again.' : ''}'
+        : workspace.cloudError ?? 'Save failed. Retry saving.');
     }
   }
+  Future<void> generateText() async {
+    if (generating) return;
+    if (!workspace.cloudAuthenticated) {
+      toast(context, 'Sign in to SHIFT Cloud to use AI generation.');
+      return;
+    }
+    final prompt = instruction.text.trim();
+    if (prompt.length < 5) {
+      toast(context, 'Describe your post in at least five characters.');
+      return;
+    }
+    if (mounted) setState(() => generating = true);
+    try {
+      final response = await ShiftCloud.client.functions.invoke(
+        'shift-generate-text', body: {
+          'prompt': prompt,
+          'requestKey': 'shift-${DateTime.now().microsecondsSinceEpoch}',
+          'goal': goal,
+          'tone': tone,
+          'platform': platform,
+          'language': language,
+          'audience': audience.text.trim(),
+          'length': length,
+        });
+      if (response.data is! Map) throw StateError('Unexpected AI response.');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (data['error'] != null) {
+        if (data['error'] == 'ai_provider_not_configured') {
+          throw StateError('SHIFT needs the server-side Groq API key and model before AI generation can run.');
+        }
+        throw StateError('AI request unavailable: ${data['error']}');
+      }
+      if (data['status'] != 'completed' || data['result'] is! Map) {
+        throw StateError('AI generation has not completed. No draft was replaced.');
+      }
+      final result = Map<String, dynamic>.from(data['result'] as Map);
+      final generatedCaption = result['caption']?.toString().trim() ?? '';
+      if (generatedCaption.isEmpty) throw StateError('The AI returned no usable caption.');
+      caption.text = generatedCaption;
+      hook.text = result['headline']?.toString() ?? '';
+      tags.text = result['hashtags']?.toString() ?? '';
+      if (mounted) toast(context, 'AI draft generated. Review it before saving or approving.');
+    } catch (e) {
+      if (mounted) toast(context, 'Could not generate content: $e');
+    } finally {
+      if (mounted) setState(() => generating = false);
+    }
+  }
+
   Future<void> pickImage() async {
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2048, maxHeight: 2048, imageQuality: 85);
@@ -106,7 +159,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final brandName = ref.watch(workspaceProvider).brand['name'] ?? 'Your brand';
     return PageBody(children: [
       Heading(widget.postId == null ? 'What should SHIFT\ncreate today?' : 'Make it sound like you.', 'Write an original post, refine it, and keep every version.'),
-      const ServiceNotice(),
+      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud workspace • Drafts and images sync to Supabase. AI output is always a reviewable draft.' : 'Offline workspace • Sign in to save online and use AI.'),
       if (widget.postId == null) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async {
         if (caption.text.trim().isNotEmpty) await save(quiet: true);
         if (!mounted) return;
@@ -119,7 +172,9 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Panel(glass: true, child: Column(children: [
           TextField(controller: instruction, maxLines: 3, decoration: const InputDecoration(labelText: 'Your instructions', hintText: 'An educational post about your next big idea…')),
-          const SizedBox(height: 12), FilledButton.icon(onPressed: () => instruction.text.trim().isEmpty ? toast(context, 'Describe what you want to create.') : unavailable(context, 'AI text and image generation'), icon: const Icon(Icons.auto_awesome), label: const Text('Generate with SHIFT')),
+          const SizedBox(height: 12), FilledButton.icon(onPressed: generating ? null : generateText,
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(generating ? 'Generating…' : 'Generate with SHIFT')),
         ])),
         const Section('Creative direction'),
         option('Destination preview', platform, [if (!ShiftSocialPlatforms.names.contains(platform)) platform, ...ShiftSocialPlatforms.names], (v) => setState(() => platform = v)),

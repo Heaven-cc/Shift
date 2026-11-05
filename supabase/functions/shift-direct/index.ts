@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.78.0";
+import { createSocial, connectedAccountRef } from "npm:@opencoredev/social-sdk@0.5.0";
+import { bluesky as sdkBluesky } from "npm:@opencoredev/social-sdk@0.5.0/bluesky";
 
 const env = (k:string) => Deno.env.get(k) ?? "";
 const db = () => createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{
@@ -98,16 +100,21 @@ async function dispatch(req:Request) {
   try{
    const auth=await session(account.handle,password);
    if(auth.did!==account.did)fail("identity_changed");
-   const postRecord={
-     $type:"app.bsky.feed.post",
-     text:content,createdAt:new Date().toISOString()
-   };
-   const result=await request("POST","com.atproto.repo.createRecord",{
-    repo:auth.did,collection:"app.bsky.feed.post",record:postRecord,
-    // Stable record key makes repeated operator troubleshooting easier;
-    // the worker itself never automatically retries this job.
-   },auth.jwt);
-   const uri=String(result.uri??"");
+   // Use the actual Social SDK 0.5.0 Bluesky adapter instead of
+   // reimplementing publishing with raw XRPC. Auth and account ownership
+   // were verified before reaching this point.
+   const social=createSocial({backend:sdkBluesky({
+     auth:{service:"https://bsky.social",did:auth.did,accessJwt:auth.jwt},
+   })});
+   const result=await social.posts.publish({
+     targets:[{account:connectedAccountRef({
+       backend:"default",platform:"bluesky",accountId:auth.did,
+     })}],
+     content:{text:content},
+     idempotencyKey:id,
+   });
+   const outcome=result.outcomes[0];
+   const uri=outcome?.state==="published" ? outcome.post.postId : "";
    if(!uri.startsWith("at://"))fail("missing_confirmation");
    await supa.from("shift_direct_jobs").update({state:"published",remote_uri:uri,error_code:null,
     finished_at:new Date().toISOString()}).eq("id",id);
@@ -192,10 +199,49 @@ async function handle(req:Request):Promise<Response> {
   return reply({job});
  }
  if(action==="jobs"){
-  const {data,error}=await supa.from("shift_direct_jobs").select("id,post_id,scheduled_for,state,remote_uri,error_code")
+  const {data,error}=await supa.from("shift_direct_jobs").select("id,post_id,scheduled_for,state,remote_uri,error_code,account_id")
    .eq("workspace_id",wid).order("scheduled_for",{ascending:false}).limit(100);
   if(error)fail("storage_error");
-  return reply({jobs:data??[]});
+  const postIds=[...new Set((data??[]).map((j)=>j.post_id as string))];
+  const accountIds=[...new Set((data??[]).map((j)=>j.account_id as string))];
+  const {data:posts}=postIds.length
+    ?await supa.from("shift_content_posts").select("id,title,client_id").eq("workspace_id",wid).in("id",postIds)
+    :{data:[]};
+  const {data:accounts}=accountIds.length
+    ?await supa.from("shift_direct_accounts").select("id,handle,platform").eq("workspace_id",wid).in("id",accountIds)
+    :{data:[]};
+  const postMap=new Map((posts??[]).map((p)=>[p.id,p]));
+  const accountMap=new Map((accounts??[]).map((a)=>[a.id,a]));
+  return reply({jobs:(data??[]).map(j=>({
+    ...j,title:postMap.get(j.post_id)?.title??'Untitled post',
+    clientId:postMap.get(j.post_id)?.client_id??null,
+    platform:accountMap.get(j.account_id)?.platform??'bluesky',
+    accountHandle:accountMap.get(j.account_id)?.handle??'Unknown account',
+  }))});
+ }
+ if(action==="reschedule"){
+  const id=body.jobId,at=body.scheduledAt;
+  if(typeof id!=="string"||!uuid.test(id)||typeof at!=="string")return reply({error:"invalid_job"},400);
+  const stamp=Date.parse(at);
+  if(!Number.isFinite(stamp)||stamp<Date.now()+60000||stamp>Date.now()+365*86400000)
+    return reply({error:"invalid_schedule_time"},400);
+  const {data:existing}=await supa.from("shift_direct_jobs")
+    .select("id,account_id,state").eq("id",id).eq("workspace_id",wid).single();
+  if(!existing||existing.state!=="queued")return reply({error:"not_reschedulable"},409);
+  const {data:policy}=await supa.from("shift_automation_policies").select("daily_limit").eq("workspace_id",wid).single();
+  const day=new Date(stamp).toISOString().substring(0,10);
+  const from=day+"T00:00:00.000Z";
+  const to=new Date(Date.parse(from)+86400000).toISOString();
+  const {count}=await supa.from("shift_direct_jobs").select("id",{count:"exact",head:true})
+    .eq("account_id",existing.account_id).neq("id",id)
+    .gte("scheduled_for",from).lt("scheduled_for",to)
+    .in("state",["queued","processing","published","unknown"]);
+  if((count??0)>=(policy?.daily_limit??1))return reply({error:"daily_limit_reached"},409);
+  const {data:updated,error:updateError}=await supa.from("shift_direct_jobs")
+    .update({scheduled_for:new Date(stamp).toISOString()}).eq("id",id).eq("workspace_id",wid)
+    .eq("state","queued").select("id,scheduled_for");
+  if(updateError||!updated?.length)return reply({error:"not_reschedulable"},409);
+  return reply({job:updated[0]});
  }
  if(action==="cancel"){
   const id=body.jobId;

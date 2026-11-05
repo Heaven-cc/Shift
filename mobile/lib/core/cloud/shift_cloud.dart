@@ -27,6 +27,43 @@ class ShiftCloud {
     return rows.first['id'] as String;
   }
 
+  /// Upload a private identity image under the owner-scoped Storage path.
+  /// Never put a device filesystem path into the cloud settings record.
+  static Future<String> uploadIdentityImage(
+    String workspaceId, File file, String kind,
+  ) async {
+    final account = user;
+    if (account == null) throw StateError('Sign in to upload your image.');
+    if (!['avatar', 'brand'].contains(kind)) throw ArgumentError('Invalid image type');
+    if (!await file.exists()) throw StateError('Image no longer exists on this device.');
+    final bytes = await file.length();
+    if (bytes < 1 || bytes > 10 * 1024 * 1024) {
+      throw StateError('Choose an image smaller than 10 MB.');
+    }
+    final path = '${account.id}/$workspaceId/identity/${kind}_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    await client.storage.from('shift-media').upload(
+      path, file, fileOptions: const FileOptions(
+        contentType: 'image/jpeg', upsert: false,
+      ),
+    );
+    return path;
+  }
+
+  static Future<Map<String,dynamic>> workspaceAction(String action,
+    [Map<String,dynamic> fields = const {}]) async {
+    if (user == null) throw StateError('Sign in to SHIFT Cloud first.');
+    final response = await client.functions.invoke(
+      'shift-workspace', body: {'action':action,...fields});
+    if (response.data is! Map) {
+      throw StateError('SHIFT workspace returned an invalid response.');
+    }
+    final result = Map<String,dynamic>.from(response.data as Map);
+    if (result['error'] != null) {
+      throw StateError('SHIFT Cloud rejected the change: ${result['error']}');
+    }
+    return result;
+  }
+
   static Future<void> saveSettings({
     required String workspaceId,
     required Map<String,String> profile,
@@ -36,31 +73,14 @@ class ShiftCloud {
     required Map<String,bool> notifications,
     required bool onboardingComplete,
   }) async {
-    final u = user;
-    if (u == null) throw StateError('No cloud session');
-    await client.from('shift_profiles').update({
-      'display_name': profile['name'] ?? '',
-      'locale': profile['language'] ?? 'en',
-      'timezone': profile['timezone'] ?? 'UTC',
-    }).eq('user_id', u.id);
-    await client.from('shift_brands').update({
-      'name': brand['name'] ?? '',
-      'description': brand['description'] ?? '',
-      'audience': brand['audience'] ?? '',
-      'brand_voice': brand['tone'] ?? '',
-      'guidelines': brand['guidelines'] ?? '',
-      'settings': brand,
-    }).eq('workspace_id',workspaceId);
-    await client.from('shift_preferences').update({
-      'preferences': preferences,
-      'interests': interests.toList(),
-      'notification_preferences': notifications,
-    }).eq('workspace_id',workspaceId);
-    await client.from('shift_workspaces').update({
-      'name': brand['name']?.isNotEmpty == true ? brand['name'] : 'My workspace',
-      'onboarding_completed': onboardingComplete,
-      'timezone': profile['timezone'] ?? 'UTC',
-    }).eq('id',workspaceId);
+    if (workspaceId != await ShiftCloud.workspaceId()) {
+      throw StateError('Workspace mismatch.');
+    }
+    await workspaceAction('save_settings', {
+      'profile':profile,'brand':brand,'preferences':preferences,
+      'interests':interests.toList(),'notifications':notifications,
+      'onboardingComplete':onboardingComplete,
+    });
   }
 
   static Future<Map<String,dynamic>> loadSettings(String workspaceId) async {
@@ -80,32 +100,18 @@ class ShiftCloud {
     return List<Map<String,dynamic>>.from(rows);
   }
 
-  static Future<void> saveBookmark(String wid, Map<String,dynamic> entry) async {
-    final existing=await client.from('shift_research_bookmarks').select('id')
-      .eq('workspace_id',wid).eq('client_id',entry['client_id'] as String).limit(1);
-    if(existing.isEmpty) {
-      await client.from('shift_research_bookmarks').insert({...entry,'workspace_id':wid});
-    } else {
-      await client.from('shift_research_bookmarks').update({
-        'topic':entry['topic'],'url':entry['url'],'notes':entry['notes'],
-        'publisher':entry['publisher'],'published_at':entry['published_at'],
-      }).eq('id',existing.first['id'] as String);
-    }
+  static Future<void> saveBookmark(String wid,Map<String,dynamic> entry) async {
+    if (wid != await workspaceId()) throw StateError('Workspace mismatch.');
+    await workspaceAction('save_bookmark',{'bookmark':entry});
   }
-
   static Future<void> deleteBookmark(String wid,String clientId) async {
-    await client.from('shift_research_bookmarks').delete()
-      .eq('workspace_id',wid).eq('client_id',clientId);
+    if (wid != await workspaceId()) throw StateError('Workspace mismatch.');
+    await workspaceAction('delete_bookmark',{'clientId':clientId});
   }
-
   static Future<void> deleteDraft(String wid,String clientId) async {
-    final rows=await client.from('shift_content_posts').select('id,status')
-      .eq('workspace_id',wid).eq('client_id',clientId).limit(1);
-    if(rows.isEmpty) throw StateError('Cloud draft not found');
-    if(rows.first['status']!='draft') throw StateError('Only unreviewed cloud drafts can be deleted');
-    await client.from('shift_content_posts').delete().eq('id',rows.first['id'] as String).eq('status','draft');
+    if (wid != await workspaceId()) throw StateError('Workspace mismatch.');
+    await workspaceAction('delete_draft',{'clientId':clientId});
   }
-
 
   static Future<String?> uploadImage(String wid,String? imagePath) async {
     if(imagePath==null)return null;
@@ -120,8 +126,8 @@ class ShiftCloud {
     final path='$userId/$wid/${DateTime.now().microsecondsSinceEpoch}.jpg';
     await client.storage.from('shift-media').upload(path,file,
       fileOptions:const FileOptions(contentType:'image/jpeg',upsert:false));
-    await client.from('shift_media_assets').insert({
-      'workspace_id':wid,'storage_path':path,'mime_type':'image/jpeg','size_bytes':size,
+    await workspaceAction('register_media', {
+      'path':path,'mimeType':'image/jpeg','sizeBytes':size,
     });
     return path;
   }
@@ -148,35 +154,51 @@ class ShiftCloud {
     return out;
   }
 
-  static Future<void> savePost(String wid, Map<String,dynamic> p, List<Map<String,dynamic>> versions) async {
-    final existing = await client.from('shift_content_posts').select('id,current_version,status')
+  static Future<void> savePost(String wid, Map<String,dynamic> p,
+    List<Map<String,dynamic>> versions) async {
+    if (wid != await workspaceId()) throw StateError('Workspace mismatch.');
+    final existing = await client.from('shift_content_posts')
+      .select('id,current_version,status')
       .eq('workspace_id',wid).eq('client_id',p['client_id'] as String).limit(1);
-    String id;
-    int remoteVersion;
-    if (existing.isEmpty) {
-      final created = await client.from('shift_content_posts').insert({
-        'workspace_id':wid, 'client_id':p['client_id'],'title':p['title'],
-        'planned_at':p['planned_at'],'planning_timezone':p['planning_timezone'],'note':p['note'],
-      }).select('id').single();
-      id=created['id'] as String; remoteVersion=0;
-    } else {
-      id=existing.first['id'] as String;
-      remoteVersion=existing.first['current_version'] as int;
-      if (existing.first['status'] != 'draft' && versions.length <= remoteVersion) {
-        throw StateError('A cloud review is active. Change the cloud post using a reviewed workflow.');
-      }
+    var remoteVersion = existing.isEmpty ? 0 :
+      existing.first['current_version'] as int;
+    final status = existing.isEmpty ? 'draft' :
+      existing.first['status'] as String;
+    if (versions.length < remoteVersion) {
+      throw StateError('Cloud has newer draft revisions. Reload before saving.');
     }
-    for (var i=remoteVersion;i<versions.length;i++) {
+    if (status == 'published' || status == 'publishing' || status == 'scheduled') {
+      throw StateError('This cloud post can no longer be edited.');
+    }
+    for (var i = remoteVersion; i < versions.length; i++) {
       final draft=Map<String,dynamic>.from(versions[i]);
       final imagePath=draft.remove('local_image_path') as String?;
-      final storagePath=await uploadImage(wid,imagePath);
-      await client.from('shift_content_versions').insert({
-        ...draft,'media_path':storagePath,'post_id':id,'version_number':i+1,
+      final remoteImage=await uploadImage(wid,imagePath);
+      final expected=i;
+      await client.rpc('shift_save_content_revision',params:{
+        'p_client_id':p['client_id'],
+        'p_expected_version':expected,
+        'p_title':p['title'],
+        'p_caption':draft['caption'],
+        'p_platform':draft['platform'],
+        'p_headline':draft['headline']??'',
+        'p_hashtags':draft['hashtags']??'',
+        'p_details':draft['details']??<String,dynamic>{},
+        'p_media_path':remoteImage,
+        'p_idempotency_key':'shift-${p['client_id']}-v${i+1}',
+      });
+      remoteVersion=i+1;
+    }
+    if (remoteVersion<1) throw StateError('A draft requires a content revision.');
+    if (status=='draft'||existing.isEmpty) {
+      await client.rpc('shift_update_content_plan',params:{
+        'p_client_id':p['client_id'],
+        'p_expected_version':remoteVersion,
+        'p_title':p['title'],
+        'p_planned_at':p['planned_at'],
+        'p_timezone':p['planning_timezone']??'UTC',
+        'p_note':p['note']??'',
       });
     }
-    await client.from('shift_content_posts').update({
-      'title':p['title'], 'planned_at':p['planned_at'],
-      'planning_timezone':p['planning_timezone'], 'note':p['note'],
-    }).eq('id',id);
   }
 }
