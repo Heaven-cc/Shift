@@ -29,3 +29,11 @@ The smoke script uses the SDK's deterministic mock backend. It does not need cre
 When explicitly approved, implement a secured API service with account connection/OAuth, encrypted token handling, user/workspace authorization and manual publishing endpoints. Then separately implement scheduling and retry workers. Social SDK must run on a trusted Node.js 22.12+ or Bun runtime rather than in Flutter.
 
 **Do not interpret this mock adapter as completion of social account integration or cloud automation.**
+
+## Exposed in the Flutter UI
+
+Social Accounts, onboarding, Studio destination preview and Insights now include Instagram, Facebook Pages, TikTok, LinkedIn, X, Threads, YouTube, Bluesky and Pinterest. Instagram/TikTok/LinkedIn/X/Threads/YouTube/Bluesky have direct SDK adapters; Facebook Pages and Pinterest require a separate API adapter or provider. All connection buttons currently open honest provider setup instructions, not a fake OAuth flow. No account is connected. The SDK mock validates the publishing contract without making live provider requests.
+
+## Remaining for live manual posting
+
+Provider developer registrations, OAuth scopes/verification, trusted Node-hosted REST service, secure tokens, Supabase ownership verification, account link/list/revoke, content and media validation, per-platform publish dispatch, outcome reconciliation and real platform integration tests. This branch does **not** implement live OAuth or publication. The cloud publishing worker and scheduled automation remain paused.
