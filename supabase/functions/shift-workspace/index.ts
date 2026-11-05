@@ -80,15 +80,19 @@ Deno.serve(async(request)=>{
    if(!path.startsWith(uid+"/"+wid+"/")||!["image/jpeg","image/png","image/webp"].includes(mime)||
     !Number.isSafeInteger(bytes)||bytes<1||bytes>10*1024*1024)
     return reply({error:"invalid_media"},400);
-   const {data:stored,error:storageError}=await db.schema("storage").from("objects")
-    .select("id,name,bucket_id,metadata").eq("bucket_id","shift-media").eq("name",path).maybeSingle();
+   const {data:stored,error:storageError}=await db.storage
+     .from("shift-media").download(path);
    if(storageError||!stored)return reply({error:"media_not_uploaded"},409);
-   const meta=record(stored.metadata);
-   const actualBytes=Number(meta.size??meta.size_bytes??0);
+   const actualBytes=stored.size;
    if(actualBytes!==bytes)return reply({error:"media_size_mismatch"},409);
-   const {error}=await db.from("shift_media_assets").upsert({
-    workspace_id:wid,storage_path:path,mime_type:mime,size_bytes:bytes,
-   },{onConflict:"storage_path"});
+   const {data:existing}=await db.from("shift_media_assets")
+    .select("id").eq("workspace_id",wid).eq("storage_path",path).maybeSingle();
+   const {error}=existing
+      ?await db.from("shift_media_assets").update({mime_type:mime,size_bytes:bytes})
+       .eq("workspace_id",wid).eq("id",existing.id)
+      :await db.from("shift_media_assets").insert({
+       workspace_id:wid,storage_path:path,mime_type:mime,size_bytes:bytes,
+      });
    if(error)throw Error("media_record_failed");
    return reply({registered:true});
   }
@@ -100,10 +104,16 @@ Deno.serve(async(request)=>{
    try{uri=new URL(url)}catch{return reply({error:"invalid_url"},400)}
    if(uri.protocol!=="https:"||uri.username||uri.password||!topic||!clientId)
      return reply({error:"invalid_bookmark"},400);
-   const {error}=await db.from("shift_research_bookmarks").upsert({
-      workspace_id:wid,client_id:clientId,url:uri.toString(),topic,notes,publisher,
-      published_at:input.published_at||null,
-    },{onConflict:"workspace_id,client_id"});
+   const {data:existing}=await db.from("shift_research_bookmarks")
+      .select("id").eq("workspace_id",wid).eq("client_id",clientId).maybeSingle();
+   const payload={url:uri.toString(),topic,notes,publisher,
+      published_at:input.published_at||null};
+   const {error}=existing
+      ?await db.from("shift_research_bookmarks").update(payload)
+       .eq("workspace_id",wid).eq("id",existing.id)
+      :await db.from("shift_research_bookmarks").insert({
+       ...payload,workspace_id:wid,client_id:clientId,
+      });
    if(error)throw Error("bookmark_save_failed");
    return reply({saved:true});
   }
