@@ -23,12 +23,18 @@ Deno.serve(async (req:Request)=>{
   // All new SHIFT AI calls share a backend-only, explicitly selected provider.
   // Do not infer a default from the older Groq integration.
   const provider=(Deno.env.get("SHIFT_AI_PROVIDER")??"").toLowerCase();
-  const providerKey=Deno.env.get("SHIFT_AI_API_KEY");
-  const providerModel=Deno.env.get("SHIFT_AI_MODEL");
+  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
+  const providerKey=provider==="nvidia"?
+    (Deno.env.get("SHIFT_NVIDIA_"+selected+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY"))
+    :Deno.env.get("SHIFT_AI_API_KEY");
+  const providerModel=provider==="nvidia"?
+    Deno.env.get("SHIFT_NVIDIA_"+selected+"_MODEL")
+    :Deno.env.get("SHIFT_AI_MODEL");
   const endpoints:Record<string,string>={
     openai:"https://api.openai.com/v1/chat/completions",
     gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     groq:"https://api.groq.com/openai/v1/chat/completions",
+    nvidia:"https://integrate.api.nvidia.com/v1/chat/completions",
   };
   let endpoint=endpoints[provider]??"";
   if(provider==="openai-compatible"){

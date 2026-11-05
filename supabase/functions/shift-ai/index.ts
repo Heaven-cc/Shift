@@ -8,8 +8,11 @@ const reply=(x:any,status=200)=>new Response(JSON.stringify(x),{status,headers})
 const admin=()=>createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false}});
 const platforms=new Set(["Instagram","Facebook","TikTok","LinkedIn","X","Threads","YouTube","Bluesky","Pinterest"]);
 function settings(){
- const provider=env("SHIFT_AI_PROVIDER").toLowerCase(),key=env("SHIFT_AI_API_KEY"),model=env("SHIFT_AI_MODEL");
- const urls:Record<string,string>={openai:"https://api.openai.com/v1/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"};
+ const provider=env("SHIFT_AI_PROVIDER").toLowerCase();
+ const role=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
+ const key=provider==="nvidia"?(env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY")):env("SHIFT_AI_API_KEY");
+ const model=provider==="nvidia"?env("SHIFT_NVIDIA_"+role+"_MODEL"):env("SHIFT_AI_MODEL");
+ const urls:Record<string,string>={openai:"https://api.openai.com/v1/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",nvidia:"https://integrate.api.nvidia.com/v1/chat/completions"};
  let url=urls[provider]||"";
  if(provider==="openai-compatible"){
   try{const u=new URL(env("SHIFT_AI_BASE_URL"));if(u.protocol==="https:"&&!u.username&&!u.password&&!u.hash&&!/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(u.hostname)&&!/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname))url=u.toString();}catch{}
