@@ -32,3 +32,40 @@ Postiz files, tables and Edge Function are retained but its controls are hidden 
 - The calendar displays the direct backend's first 100 server jobs. Filtering, server pagination, and robust notification delivery require further work at scale.
 - A Flutter CI workflow was added; do not claim Android/iOS runtime correctness until it passes and a device build is tested.
 - Supabase Cron/Edge Function usage may incur cloud charges, even though no VPS is needed.
+
+
+## Cloud write permissions and endpoint (November 5 audit)
+
+Existing production tables intentionally **do not grant Flutter INSERT/UPDATE** for
+`shift_profiles`, `shift_brands`, `shift_preferences`,
+`shift_research_bookmarks`, `shift_media_assets`, or the draft tables.
+Previously Flutter tried writing directly and those requests would be denied.
+The new authenticated `shift-workspace` Edge Function checks the JWT
+with `auth.getUser`, derives the workspace from the user on the server, and
+performs owner-scoped profile/brand/prefs, bookmark, media registration, and
+draft deletion mutations. Server secrets remain outside the mobile bundle.
+
+Cloud content revisions now use the pre-existing owner-validated
+`shift_save_content_revision` RPC, including version conflict and idempotency
+checks. The production RPC was updated to accept all nine UI destinations.
+Draft planning changes use `shift_update_content_plan`. These changes do
+not grant public write access to sensitive tables.
+
+The **signed-in workspace** is the remote source of truth. The device-only
+workspace stays separate until explicitly imported. Some app preferences,
+most notably visual theme and current-session activity, remain local device UI
+state; not every visual preference is a remote profile field.
+
+### Explicit limitations
+
+- Real social connection and publishing remains unverified until owner
+  supplies legitimate platform developer configuration and a test account.
+- AI functions are deployed and UI actions are connected, but Groq and Brave
+  provider secrets must be configured for results.
+- App-wide online writes are implemented in code and supported by a deployed
+  Edge endpoint; a signed-in-device round-trip save/load test is still required.
+- Cloud settings updates currently span several tables without an atomic
+  transaction. A failed partial update must be retried or reconciled.
+- The Bluesky SDK publishing adapter was deployed and a zero-job authenticated
+  dispatch returned HTTP 200. There has been no real post delivery test.
+- Postiz code is preserved, with its active controls hidden until a VPS exists.
