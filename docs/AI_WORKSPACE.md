@@ -2,7 +2,7 @@
 
 ## Available code paths
 
-SHIFT's Flutter Studio invokes the workspace-scoped `shift-generate-text` Supabase Edge Function. This backend uses the server-side `GROQ_API_KEY` and `GROQ_MODEL` secrets; neither secret belongs in the mobile application.
+SHIFT's Flutter Studio invokes the workspace-scoped `shift-generate-text` Supabase Edge Function. This backend now uses the chosen server-side `SHIFT_AI_PROVIDER`, `SHIFT_AI_MODEL` and `SHIFT_AI_API_KEY` secrets. Groq remains optional, not required. Neither key nor secret belongs in the mobile application.
 
 Studio now supports:
 - Original caption/headline/hashtag generation
