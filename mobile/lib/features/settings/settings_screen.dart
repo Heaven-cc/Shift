@@ -11,6 +11,7 @@ import '../../core/ui/design.dart';
 import '../../core/social/social_platforms.dart';
 import '../../core/social/platform_setup.dart';
 import '../../core/social/postiz_connections_panel.dart';
+import '../../core/social/direct_connections_panel.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key, this.section});
@@ -162,9 +163,12 @@ class AccountsScreen extends StatelessWidget {
     body: PageBody(children: [
       const Heading('Your presence.\nOne workspace.', 'Manage destinations and prepare official account connections.'),
       const ServiceNotice(
-        text: 'Connect a Postiz workspace to see real connected channels. SHIFT background automation remains paused; Postiz scheduling is a separate manual action.',
+        text: 'Supabase Cron is the current scheduling backend. Postiz is preserved for VPS hosting later. Only verified connected platforms can publish.',
       ),
-      const PostizConnectionsPanel(),
+      const DirectConnectionsPanel(),
+      const ExpansionTile(title: Text('Postiz (saved for VPS hosting)'),
+        subtitle: Text('Inactive until a Postiz server is configured'),
+        children: [PostizConnectionsPanel()]),
       const Section('Social destinations'),
       ...ShiftSocialPlatforms.all.map((platform) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
