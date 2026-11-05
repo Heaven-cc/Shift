@@ -83,6 +83,8 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
     final matches = w.bookmarks.where((b) => b.topic.toLowerCase().contains(query.text.toLowerCase())).toList();
     return PageBody(children: [
       const Heading('Follow your curiosity.', 'Find an angle worth sharing. Keep the sources that matter.'),
+      OutlinedButton.icon(onPressed:()=>context.push('/ai-workspace'),
+        icon:const Icon(Icons.auto_awesome),label:const Text('Analyze with SHIFT AI')),
       TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) research(); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: researching ? null : research, icon: const Icon(Icons.arrow_forward)))),
       const SizedBox(height: 16),
       ServiceNotice(text: w.cloudAuthenticated
