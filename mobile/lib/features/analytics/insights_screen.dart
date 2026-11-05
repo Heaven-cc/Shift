@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/ui/design.dart';
+import '../../core/social/social_platforms.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -12,7 +13,7 @@ class _InsightsState extends State<InsightsScreen> {
     const Heading('See what resonates.', 'Real performance. Better decisions.'),
     Wrap(spacing: 8, runSpacing: 8, children: [
       DropdownButton<String>(value: period, items: ['Last 7 days', 'Last 30 days', 'Last 90 days'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => period = v!)),
-      DropdownButton<String>(value: platform, items: ['All platforms', 'Instagram', 'Facebook'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => platform = v!)),
+      DropdownButton<String>(value: platform, items: ['All platforms', ...ShiftSocialPlatforms.names].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => platform = v!)),
     ]),
     const SizedBox(height: 12), const ServiceNotice(text: 'No account metrics have been received. A dash means unavailable, not zero.'),
     LayoutBuilder(builder: (c, box) => Wrap(spacing: 12, runSpacing: 12, children: ['Published posts', 'Views / impressions', 'Reach', 'Engagement', 'Likes', 'Comments', 'Shares', 'Follower growth'].map((s) => SizedBox(width: (box.maxWidth - 12) / 2, child: Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('—', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)), Text(s)])))).toList())),

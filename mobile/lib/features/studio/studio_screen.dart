@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/domain/models.dart';
 import '../../core/state/workspace.dart';
 import '../../core/ui/design.dart';
+import '../../core/social/social_platforms.dart';
 
 class StudioScreen extends ConsumerStatefulWidget {
   const StudioScreen({super.key, this.postId, this.sourceId});
@@ -121,7 +122,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           const SizedBox(height: 12), FilledButton.icon(onPressed: () => instruction.text.trim().isEmpty ? toast(context, 'Describe what you want to create.') : unavailable(context, 'AI text and image generation'), icon: const Icon(Icons.auto_awesome), label: const Text('Generate with SHIFT')),
         ])),
         const Section('Creative direction'),
-        option('Destination preview', platform, ['Instagram', 'Facebook'], (v) => setState(() => platform = v)),
+        option('Destination preview', platform, [if (!ShiftSocialPlatforms.names.contains(platform)) platform, ...ShiftSocialPlatforms.names], (v) => setState(() => platform = v)),
         option('Content goal', goal, ['Educate', 'Inform', 'Entertain', 'Promote', 'Build awareness', 'Encourage engagement'], (v) => setState(() => goal = v)),
         option('Tone', tone, ['Conversational', 'Professional', 'Inspirational', 'Playful', 'Direct'], (v) => setState(() => tone = v)),
         option('Length', length, ['Short', 'Medium', 'Long'], (v) => setState(() => length = v)),
@@ -152,7 +153,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           if (imagePath != null) Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Image.file(File(imagePath!), height: 180, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined))),
           const SizedBox(height: 12), if (hook.text.isNotEmpty) Text(hook.text, style: Theme.of(context).textTheme.titleMedium),
           Text(caption.text.isEmpty ? 'Your caption will appear here.' : caption.text), if (tags.text.isNotEmpty) Text(tags.text),
-          const SizedBox(height: 12), Text(platform == 'Instagram' ? 'Instagram requires eligible media and a professional account. The server will validate the format.' : 'Facebook publishing requires a connected Page. Final formatting depends on provider capabilities.', style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 12), Text(ShiftSocialPlatforms.byName(platform).publishingNote, style: const TextStyle(fontSize: 12)),
         ])),
         const SizedBox(height: 20), Text(saveLabel, style: const TextStyle(fontSize: 12)), const SizedBox(height: 8),
         FilledButton.icon(onPressed: saving ? null : save, icon: const Icon(Icons.save_outlined), label: Text(saving ? 'Saving…' : 'Save draft')),
