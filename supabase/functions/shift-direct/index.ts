@@ -192,10 +192,49 @@ async function handle(req:Request):Promise<Response> {
   return reply({job});
  }
  if(action==="jobs"){
-  const {data,error}=await supa.from("shift_direct_jobs").select("id,post_id,scheduled_for,state,remote_uri,error_code")
+  const {data,error}=await supa.from("shift_direct_jobs").select("id,post_id,scheduled_for,state,remote_uri,error_code,account_id")
    .eq("workspace_id",wid).order("scheduled_for",{ascending:false}).limit(100);
   if(error)fail("storage_error");
-  return reply({jobs:data??[]});
+  const postIds=[...new Set((data??[]).map((j)=>j.post_id as string))];
+  const accountIds=[...new Set((data??[]).map((j)=>j.account_id as string))];
+  const {data:posts}=postIds.length
+    ?await supa.from("shift_content_posts").select("id,title,client_id").eq("workspace_id",wid).in("id",postIds)
+    :{data:[]};
+  const {data:accounts}=accountIds.length
+    ?await supa.from("shift_direct_accounts").select("id,handle,platform").eq("workspace_id",wid).in("id",accountIds)
+    :{data:[]};
+  const postMap=new Map((posts??[]).map((p)=>[p.id,p]));
+  const accountMap=new Map((accounts??[]).map((a)=>[a.id,a]));
+  return reply({jobs:(data??[]).map(j=>({
+    ...j,title:postMap.get(j.post_id)?.title??'Untitled post',
+    clientId:postMap.get(j.post_id)?.client_id??null,
+    platform:accountMap.get(j.account_id)?.platform??'bluesky',
+    accountHandle:accountMap.get(j.account_id)?.handle??'Unknown account',
+  }))});
+ }
+ if(action==="reschedule"){
+  const id=body.jobId,at=body.scheduledAt;
+  if(typeof id!=="string"||!uuid.test(id)||typeof at!=="string")return reply({error:"invalid_job"},400);
+  const stamp=Date.parse(at);
+  if(!Number.isFinite(stamp)||stamp<Date.now()+60000||stamp>Date.now()+365*86400000)
+    return reply({error:"invalid_schedule_time"},400);
+  const {data:existing}=await supa.from("shift_direct_jobs")
+    .select("id,account_id,state").eq("id",id).eq("workspace_id",wid).single();
+  if(!existing||existing.state!=="queued")return reply({error:"not_reschedulable"},409);
+  const {data:policy}=await supa.from("shift_automation_policies").select("daily_limit").eq("workspace_id",wid).single();
+  const day=new Date(stamp).toISOString().substring(0,10);
+  const from=day+"T00:00:00.000Z";
+  const to=new Date(Date.parse(from)+86400000).toISOString();
+  const {count}=await supa.from("shift_direct_jobs").select("id",{count:"exact",head:true})
+    .eq("account_id",existing.account_id).neq("id",id)
+    .gte("scheduled_for",from).lt("scheduled_for",to)
+    .in("state",["queued","processing","published","unknown"]);
+  if((count??0)>=(policy?.daily_limit??1))return reply({error:"daily_limit_reached"},409);
+  const {data:updated,error:updateError}=await supa.from("shift_direct_jobs")
+    .update({scheduled_for:new Date(stamp).toISOString()}).eq("id",id).eq("workspace_id",wid)
+    .eq("state","queued").select("id,scheduled_for");
+  if(updateError||!updated?.length)return reply({error:"not_reschedulable"},409);
+  return reply({job:updated[0]});
  }
  if(action==="cancel"){
   const id=body.jobId;
