@@ -38,7 +38,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
     final ok = await w.persist();
     if (!mounted) return;
     setState(() { saving = false; if (ok && step < 5) step++; });
-    if (!ok) toast(context, 'Unable to save setup. Retry after checking device storage.');
+    if (!ok) toast(context, 'Unable to save setup. Check your connection or device storage, then retry.');
   }
   @override Widget build(BuildContext context) {
     const titles = ['Make it yours.', 'What moves you?', 'Define your voice.', 'Connect your presence.', 'Stay in control.', 'Ready for your next chapter.'];
@@ -53,7 +53,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
         ],
         if (step == 2) ...labels.entries.where((e) => e.key != 'weeklyTarget').map((e) => Field(e.value, controller: fields[e.key]!, required: ['name', 'niche', 'audience', 'language'].contains(e.key), lines: ['description', 'blocked'].contains(e.key) ? 2 : 1)),
         if (step == 3) ...[
-          const ServiceNotice(text: 'Social OAuth is not connected. You can complete setup and connect later.'),
+          const ServiceNotice(text: 'Bluesky direct connection is available after sign-in in Social Accounts. Other platforms need developer OAuth setup. You can continue and connect later.'),
           ...ShiftSocialPlatforms.all.map((p) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.link_off), title: Text(p.name), subtitle: Text('${p.accountRequirement} • Not connected'), trailing: IconButton(tooltip: 'Set up ${p.name}', onPressed: () => showPlatformSetup(context, p), icon: const Icon(Icons.settings_outlined)))),
         ],
         if (step == 4) ...[
@@ -67,7 +67,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
             Text(fields['name']!.text, style: Theme.of(context).textTheme.headlineSmall), const SizedBox(height: 12),
             Text('$purpose • $mode'), const SizedBox(height: 8), Text(interests.join(' • ')),
             const SizedBox(height: 8), Text('Weekly target: ${fields['weeklyTarget']!.text}'),
-            const SizedBox(height: 12), const Text('Connected accounts: none\nAutomation: inactive\nStorage: account settings sync when signed in; device media stays local'),
+            const SizedBox(height: 12), const Text('Connected accounts: none\nAutomation: inactive\nStorage: signed-in settings, drafts and supported media sync to SHIFT Cloud'),
           ])),
           CheckboxListTile(contentPadding: EdgeInsets.zero, title: const Text('Confirm these preferences for my local workspace. This does not authorize publishing.'), value: confirmed, onChanged: (v) => setState(() => confirmed = v ?? false)),
         ],
