@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/state/workspace.dart';
 import '../../core/ui/design.dart';
+import '../../core/social/social_platforms.dart';
+import '../../core/social/platform_setup.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -52,7 +54,7 @@ class _OnboardingState extends ConsumerState<OnboardingScreen> {
         if (step == 2) ...labels.entries.where((e) => e.key != 'weeklyTarget').map((e) => Field(e.value, controller: fields[e.key]!, required: ['name', 'niche', 'audience', 'language'].contains(e.key), lines: ['description', 'blocked'].contains(e.key) ? 2 : 1)),
         if (step == 3) ...[
           const ServiceNotice(text: 'Social OAuth is not connected. You can complete setup and connect later.'),
-          ...['Instagram Professional', 'Facebook Pages'].map((p) => ListTile(leading: const Icon(Icons.link_off), title: Text(p), subtitle: const Text('Not connected'), trailing: OutlinedButton(onPressed: () => unavailable(context, p), child: const Text('Connect')))),
+          ...ShiftSocialPlatforms.all.map((p) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.link_off), title: Text(p.name), subtitle: Text('${p.accountRequirement} • Not connected'), trailing: IconButton(tooltip: 'Set up ${p.name}', onPressed: () => showPlatformSetup(context, p), icon: const Icon(Icons.settings_outlined)))),
         ],
         if (step == 4) ...[
           ...['Manual', 'Approval required', 'Trusted Autopilot'].map((p) => RadioListTile<String>(value: p, groupValue: mode, title: Text(p), subtitle: Text(p == 'Trusted Autopilot' ? 'Preference only. Requires separate cloud authorization.' : p == 'Manual' ? 'You decide when each post is published.' : 'Review exact content and destinations first.'), onChanged: (v) => setState(() => mode = v!))),
