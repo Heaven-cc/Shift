@@ -83,6 +83,31 @@ async function postiz(path:string, token:string, init?:RequestInit) {
   }finally{clearTimeout(timer)}
 }
 type Channel={id:string;provider:string;name:string};
+async function uploadImage(token:string, db:ReturnType<typeof service>, workspaceId:string, storagePath:string) {
+  if(storagePath.length>512 || storagePath.startsWith("/") || storagePath.includes("..")) throw Error("invalid_media_path");
+  const {data:asset,error}=await db.from("shift_media_assets").select("mime_type,size_bytes")
+    .eq("workspace_id",workspaceId).eq("storage_path",storagePath).maybeSingle();
+  if(error || !asset || !["image/jpeg","image/png","image/webp"].includes(asset.mime_type) ||
+      asset.size_bytes>10*1024*1024) throw Error("invalid_media_asset");
+  const {data:blob,error:storageError}=await db.storage.from("shift-media").download(storagePath);
+  if(storageError || !blob || blob.size>10*1024*1024) throw Error("invalid_media_asset");
+  const extension=asset.mime_type==="image/png"?"png":asset.mime_type==="image/webp"?"webp":"jpg";
+  const form=new FormData();
+  form.append("file",blob,"shift-upload."+extension);
+  const aborter=new AbortController();
+  const timer=setTimeout(()=>aborter.abort(),25000);
+  try {
+    const res=await fetch(apiBase()+"/upload",{method:"POST",
+      headers:{Authorization:token,Accept:"application/json"},body:form,signal:aborter.signal});
+    if(!res.ok) throw Error("postiz_upload_failed");
+    const value=await res.json();
+    const file=value && typeof value==="object" ? value as Record<string,unknown> : {};
+    const id=typeof file.id==="string"?file.id:"";
+    const path=typeof file.path==="string"?file.path:"";
+    if(!id || !/^https:\/\//.test(path)) throw Error("postiz_upload_failed");
+    return {id,path};
+  } finally {clearTimeout(timer)}
+}
 async function channels(token:string):Promise<Channel[]> {
   const data=await postiz("/integrations",token);
   const raw=Array.isArray(data)?data:(data && typeof data==="object" ?
@@ -183,13 +208,15 @@ async function handler(req:Request):Promise<Response> {
       .select("caption,headline,hashtags,media_path,platform").eq("post_id",postId)
       .eq("version_number",post.approved_version).single();
     if(vError||!version)return json({error:"approved_content_missing"},409);
-    if(version.media_path)return json({error:"media_schedule_not_enabled"},422);
+
     const available=await channels(token);
     const chosen=available.find(c=>c.id===accountId);
     if(!chosen)return json({error:"account_not_connected"},403);
-    const supportsText=["x","linkedin","linkedin-page","facebook","threads","bluesky","mastodon","telegram"];
-    if(!supportsText.includes(chosen.provider))return json({error:"platform_requires_media_or_specific_settings"},422);
-    const normalized=chosen.provider==="linkedin-page"?"linkedin":chosen.provider;
+    const supported=["instagram","instagram-standalone","x","linkedin","linkedin-page","facebook","threads","bluesky"];
+    if(!supported.includes(chosen.provider))return json({error:"platform_requires_media_or_specific_settings"},422);
+    if(["instagram","instagram-standalone"].includes(chosen.provider) && !version.media_path)
+      return json({error:"instagram_image_required"},422);
+    const normalized=chosen.provider==="linkedin-page"?"linkedin":chosen.provider==="instagram-standalone"?"instagram":chosen.provider;
     const matching=String(version.platform).toLowerCase();
     if(matching!==normalized)return json({error:"draft_destination_mismatch"},409);
     const text=[version.headline,version.caption,version.hashtags].filter(Boolean).join("\n\n").trim();
@@ -201,9 +228,12 @@ async function handler(req:Request):Promise<Response> {
     if(insertError)return json({error:insertError.code==="23505"?"already_submitted":"schedule_save_failed"},409);
     const settings:Record<string,unknown>={"__type":chosen.provider};
     if(chosen.provider==="x")settings.who_can_reply_post="everyone";
-    const payload={type:"schedule",date:timestamp.toISOString(),shortLink:false,tags:[],
-      posts:[{integration:{id:accountId},value:[{content:text,image:[]}],settings}]};
+    if(["instagram","instagram-standalone"].includes(chosen.provider))settings.post_type="post";
     try {
+      const media=typeof version.media_path==="string" && version.media_path
+        ?[await uploadImage(token,db,workspaceId,version.media_path)]:[];
+      const payload={type:"schedule",date:timestamp.toISOString(),shortLink:false,tags:[],
+        posts:[{integration:{id:accountId},value:[{content:text,image:media}],settings}]};
       const result=await postiz("/posts",token,{method:"POST",body:JSON.stringify(payload)});
       const rows=Array.isArray(result)?result:(result&&typeof result==="object"?
         ((result as Record<string,unknown>).posts ?? [result]):[]);
@@ -227,7 +257,7 @@ async function handler(req:Request):Promise<Response> {
 Deno.serve(async req=>{
   try{return await handler(req)}
   catch(error){const message=error instanceof Error?error.message:"unexpected_error";
-    const status=message==="unauthorized"?401:message==="postiz_not_connected"?409:400;
+    const status=message==="unauthorized"?401:message==="postiz_not_connected"?409:message==="postiz_http_429"?429:400;
     const safe=["unauthorized","workspace_not_found","postiz_not_connected","postiz_store_unavailable",
       "oauth_state_store_failed","disconnect_failed","postiz_http_401","postiz_http_403","postiz_http_429"].includes(message)
       ?message:"postiz_request_failed";
