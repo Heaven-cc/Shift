@@ -8,8 +8,7 @@ create table if not exists public.shift_direct_accounts (
  platform text not null check(platform='bluesky'),
  handle text not null check(length(handle) between 3 and 255),
  did text not null check(length(did) between 5 and 300),
- secret_iv text not null,
- secret_ciphertext text not null,
+ secret_id uuid not null,
  state text not null default 'connected' check(state in ('connected','disconnected','revoked')),
  connected_at timestamptz not null default now(),
  unique(workspace_id,platform,did)
@@ -74,6 +73,54 @@ as $$
 $$;
 revoke all on function public.shift_claim_direct_due(integer) from public,anon,authenticated;
 grant execute on function public.shift_claim_direct_due(integer) to service_role;
+
+
+-- Store user-provided app passwords in Supabase Vault, not public tables.
+-- These RPCs are callable only by the service_role and are never exposed to
+-- ordinary SHIFT accounts. Account ownership is checked by the Edge Function.
+create or replace function public.shift_save_direct_account(
+ p_workspace uuid, p_handle text, p_did text, p_app_password text
+) returns uuid language plpgsql security definer set search_path='' as $
+declare v_id uuid; v_old uuid; v_vault uuid;
+begin
+ if p_workspace is null or p_app_password is null or length(p_app_password)<8 or length(p_app_password)>200 then
+  raise exception 'Invalid connection input';
+ end if;
+ select a.secret_id into v_old from public.shift_direct_accounts a
+  where a.workspace_id=p_workspace and a.platform='bluesky' and a.did=p_did for update;
+ select vault.create_secret(p_app_password,'shift_bsky_'||gen_random_uuid()::text) into v_vault;
+ insert into public.shift_direct_accounts(workspace_id,platform,handle,did,secret_id,state)
+ values(p_workspace,'bluesky',p_handle,p_did,v_vault,'connected')
+ on conflict (workspace_id,platform,did) do update
+ set handle=excluded.handle,secret_id=excluded.secret_id,state='connected',connected_at=now()
+ returning id into v_id;
+ if v_old is not null then delete from vault.secrets where id=v_old; end if;
+ return v_id;
+end; $;
+revoke all on function public.shift_save_direct_account(uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.shift_save_direct_account(uuid,text,text,text) to service_role;
+
+create or replace function public.shift_get_direct_secret(p_id uuid)
+returns text language sql security definer set search_path='' as $
+ select v.decrypted_secret from public.shift_direct_accounts a
+ join vault.decrypted_secrets v on v.id=a.secret_id
+ where a.id=p_id and a.state='connected' and a.platform='bluesky'
+$;
+revoke all on function public.shift_get_direct_secret(uuid) from public,anon,authenticated;
+grant execute on function public.shift_get_direct_secret(uuid) to service_role;
+
+create or replace function public.shift_disconnect_direct_account(p_id uuid,p_workspace uuid)
+returns void language plpgsql security definer set search_path='' as $
+declare v_secret uuid;
+begin
+ select secret_id into v_secret from public.shift_direct_accounts
+ where id=p_id and workspace_id=p_workspace for update;
+ if v_secret is null then raise exception 'Account not found'; end if;
+ update public.shift_direct_accounts set state='disconnected' where id=p_id and workspace_id=p_workspace;
+ delete from vault.secrets where id=v_secret;
+end; $;
+revoke all on function public.shift_disconnect_direct_account(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.shift_disconnect_direct_account(uuid,uuid) to service_role;
 
 -- Generate the one-time dispatcher token inside Postgres; never commit it or put
 -- a service-role JWT in a Git-tracked cron command.
