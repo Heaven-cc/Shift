@@ -287,7 +287,7 @@ class Workspace extends ChangeNotifier {
     if (cloudAuthenticated) { notifyListeners(); return saveCloudPost(post); }
     return persist();
   }
-  Future<bool> removePost(String id) {
+  Future<bool> removePost(String id) async {
     if (cloudAuthenticated) {
       try {
         await ShiftCloud.deleteDraft(cloudWorkspaceId!,id);
