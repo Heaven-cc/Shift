@@ -20,9 +20,11 @@ class ShiftSocialPlatform {
   final String connectionNote;
   final bool directSdk;
 
-  String get integrationLabel => directSdk
-      ? 'Postiz channel available after server setup'
-      : 'Postiz-supported channel • setup needed';
+  String get integrationLabel => id == 'bluesky'
+      ? 'Supabase direct connection available • see account panel'
+      : directSdk
+          ? 'Social SDK adapter available • OAuth not configured'
+          : 'Requires separate provider integration';
 }
 
 class ShiftSocialPlatforms {
