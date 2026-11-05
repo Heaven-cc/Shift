@@ -50,7 +50,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   for(const p of parts)for(const a of (p.annotations||[])){if(a.type!=="url_citation")continue;try{const u=new URL(a.url);if(u.protocol==="https:"&&!sources.some(x=>x.url===u.toString()))sources.push({url:u.toString(),title:clean(a.title,200),summary:"Web search citation",publisher:u.hostname})}catch{}}
   return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
  }
- const r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,temperature:0.4,max_tokens:1800,messages:[{role:"system",content:system},{role:"user",content:prompt}]})});
+ const r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,...(c.provider==="openai"?{max_completion_tokens:1800}:{max_tokens:1800}),messages:[{role:"system",content:system},{role:"user",content:prompt}]})});
  if(!r.ok)throw Error("provider_unavailable");
  const d=await r.json();
  return {text:clean(d.choices?.[0]?.message?.content,16000),sources:[]};
