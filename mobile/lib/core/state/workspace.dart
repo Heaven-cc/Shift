@@ -214,7 +214,7 @@ class Workspace extends ChangeNotifier {
       }).toList());
       cloudError=null; return true;
     } catch(e) {
-      cloudError='Draft saved on this device only. Cloud sync failed: $e';
+      cloudError='Cloud draft save failed. Changes remain in the editor; retry before leaving the page: $e';
       notifyListeners(); return false;
     }
   }
@@ -272,20 +272,41 @@ class Workspace extends ChangeNotifier {
     activity.insert(0, {'title': title, 'route': route, 'at': DateTime.now().toIso8601String()});
     if (activity.length > 100) activity.removeLast();
   }
-  Future<bool> savePost(LocalPost post) {
+  Future<bool> savePost(LocalPost post) async {
     final index = posts.indexWhere((p) => p.id == post.id);
+    final previous = index < 0 ? null : posts[index];
     if (index < 0) { posts.insert(0, post); } else { posts[index] = post; }
+    if (cloudAuthenticated) {
+      final ok = await saveCloudPost(post);
+      if (!ok) {
+        if (previous == null) { posts.removeWhere((p) => p.id == post.id); }
+        else { final at = posts.indexWhere((p) => p.id == post.id); if (at >= 0) posts[at] = previous; }
+        notifyListeners();
+        return false;
+      }
+    } else {
+      final ok = await persist();
+      if (!ok) return false;
+    }
     record('Draft saved: ${post.title}', '/post/${post.id}');
-    if (cloudAuthenticated) { notifyListeners(); return saveCloudPost(post); }
-    return persist();
+    notifyListeners();
+    return true;
   }
-  Future<bool> changePost(LocalPost post, String action) {
+  Future<bool> changePost(LocalPost post, String action) async {
     final index = posts.indexWhere((p) => p.id == post.id);
-    if (index < 0) return Future.value(false);
+    if (index < 0) return false;
+    final previous = posts[index];
     posts[index] = post;
+    final ok = cloudAuthenticated ? await saveCloudPost(post) : await persist();
+    if (!ok) {
+      final at = posts.indexWhere((p) => p.id == post.id);
+      if (at >= 0) posts[at] = previous;
+      notifyListeners();
+      return false;
+    }
     record(action, '/post/${post.id}');
-    if (cloudAuthenticated) { notifyListeners(); return saveCloudPost(post); }
-    return persist();
+    notifyListeners();
+    return true;
   }
   Future<bool> removePost(String id) async {
     if (cloudAuthenticated) {
