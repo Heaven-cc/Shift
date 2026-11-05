@@ -111,7 +111,7 @@ class PostScreen extends ConsumerWidget {
       const Text('Review applies to this exact content version and preview platform. Real approvals also require connected destination accounts.'),
       const SizedBox(height: 12),
       Wrap(spacing: 8, runSpacing: 8, children: [
-        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: const Text(w.cloudAuthenticated ? 'Submit for cloud review' : 'Submit for local review')),
+        if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: Text(w.cloudAuthenticated ? 'Submit for cloud review' : 'Submit for local review')),
         if (p.status == PostStatus.pendingApproval) ...[
           FilledButton(onPressed: () async { if (await confirm(context, w.cloudAuthenticated ? 'Approve cloud version ${p.versions.length}?' : 'Approve local version ${p.versions.length}?', w.cloudAuthenticated ? 'Approve this exact saved revision in SHIFT Cloud. You must still schedule it to a connected account.' : 'Approve this version locally. Local approval alone does not authorize publishing.', action: w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: Text(w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')),
           OutlinedButton(onPressed: () => change(PostStatus.draft, 'Returned to drafts'), child: const Text('Reject / return to draft')),
