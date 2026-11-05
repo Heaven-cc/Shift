@@ -29,6 +29,7 @@ class SettingsScreen extends ConsumerWidget {
           ('Brand identity', 'Audience, voice and guidelines', Icons.fingerprint, '/settings/brand'),
           ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
           ('AI preferences', 'Style, research and images', Icons.auto_awesome_outlined, '/settings/ai'),
+          ('SHIFT AI Workspace', 'Brand research, ideas, strategy and content plans', Icons.psychology_outlined, '/ai-workspace'),
           ('Automation', 'Rules, limits and posting windows', Icons.bolt_outlined, '/automation'),
           ('Approvals', 'Review your drafts and cloud content', Icons.fact_check_outlined, '/approvals'),
           ('Appearance', 'Light, dark or system', Icons.contrast, '/settings/appearance'),

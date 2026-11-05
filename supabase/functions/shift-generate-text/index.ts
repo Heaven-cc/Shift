@@ -20,11 +20,31 @@ Deno.serve(async (req:Request)=>{
   const url=Deno.env.get("SUPABASE_URL");
   const anonKey=Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const providerKey=Deno.env.get("GROQ_API_KEY");
-  const providerModel=Deno.env.get("GROQ_MODEL");
+  // All new SHIFT AI calls share a backend-only, explicitly selected provider.
+  // Do not infer a default from the older Groq integration.
+  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")??"").toLowerCase();
+  const providerKey=Deno.env.get("SHIFT_AI_API_KEY");
+  const providerModel=Deno.env.get("SHIFT_AI_MODEL");
+  const endpoints:Record<string,string>={
+    openai:"https://api.openai.com/v1/chat/completions",
+    gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    groq:"https://api.groq.com/openai/v1/chat/completions",
+  };
+  let endpoint=endpoints[provider]??"";
+  if(provider==="openai-compatible"){
+    try{
+      const chosen=new URL(Deno.env.get("SHIFT_AI_BASE_URL")??"");
+      if(chosen.protocol==="https:"&&!chosen.username&&!chosen.password&&!chosen.hash&&
+        !/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(chosen.hostname)&&
+        !/^\d+\.\d+\.\d+\.\d+$/.test(chosen.hostname)){
+        endpoint=chosen.toString();
+      }
+    }catch{/* Invalid custom endpoint */}
+  }
   if(!url||!anonKey||!serviceRole)return respond({error:"backend_not_configured"},503);
-  // Do not consume credits or create a job until the owner configures both secrets.
-  if(!providerKey||!providerModel)return respond({error:"ai_provider_not_configured"},503);
+  // No AI requests or usage are recorded until the provider is configured.
+  if(!providerKey||!providerModel||!endpoint)
+    return respond({error:"ai_provider_not_configured"},503);
   const authorization=req.headers.get("authorization")??"";
   const token=authorization.replace(/^Bearer\s+/i,"");
   if(!token)return respond({error:"sign_in_required"},401);
@@ -135,12 +155,11 @@ Deno.serve(async (req:Request)=>{
       ideas:"Provide 5 original, specific post ideas in ideas; write a short helpful caption summarizing why they fit the brand.",
       strategy:"Offer a practical, brand-aware editorial strategy with positioning, 3-5 content pillars, a manageable weekly cadence and 2 concrete experiments. Never claim analytics are available when they are not."
     };
-    const response=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+    const response=await fetch(endpoint,{
       method:"POST",signal:controller.signal,
       headers:{"authorization":`Bearer ${providerKey}`,"content-type":"application/json"},
       body:JSON.stringify({
-        model:providerModel,temperature:0.6,max_tokens:900,
-        response_format:{type:"json_object"},
+        model:providerModel,...(provider==="openai"?{max_completion_tokens:1200}:{max_tokens:1200}),
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+
@@ -156,7 +175,12 @@ Deno.serve(async (req:Request)=>{
     const text=parsed?.choices?.[0]?.message?.content;
     if(typeof text!=="string"||text.length>20000)throw Error("invalid_provider_output");
     let obj:Record<string,unknown>;
-    try {obj=JSON.parse(text);}catch{throw Error("invalid_provider_json");}
+    try {obj=JSON.parse(text);}catch{
+      const start=text.indexOf("{"),end=text.lastIndexOf("}");
+      if(start<0||end<=start)throw Error("invalid_provider_json");
+      try {obj=JSON.parse(text.slice(start,end+1));}
+      catch {throw Error("invalid_provider_json");}
+    }
     const result={
       caption:safeText(obj.caption,15000),
       headline:safeText(obj.headline,300),
@@ -179,7 +203,7 @@ Deno.serve(async (req:Request)=>{
         }:null,
       mode,
       requiresReview:true,
-      provider:"groq",model:providerModel,
+      provider,model:providerModel,
     };
     if(!result.caption)throw Error("empty_caption");
     await admin.from("shift_generation_jobs").update({

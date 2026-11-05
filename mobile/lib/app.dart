@@ -9,6 +9,7 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/discover/discover_screen.dart';
 import 'features/studio/studio_screen.dart';
+import 'features/ai/ai_workspace_screen.dart';
 import 'features/calendar/calendar_screen.dart';
 import 'features/analytics/insights_screen.dart';
 import 'features/settings/settings_screen.dart';
@@ -36,6 +37,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     GoRoute(path: '/settings/:section', builder: (_, s) => SettingsScreen(section: s.pathParameters['section'])),
     GoRoute(path: '/accounts', builder: (_, __) => const AccountsScreen()),
     GoRoute(path: '/automation', builder: (_, __) => const AutomationScreen()),
+    GoRoute(path: '/ai-workspace', builder: (_, __) => const AiWorkspaceScreen()),
     GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
     GoRoute(path: '/approvals', builder: (_, __) => const PostsScreen(approvals: true)),
     GoRoute(path: '/drafts', builder: (_, __) => const PostsScreen()),
