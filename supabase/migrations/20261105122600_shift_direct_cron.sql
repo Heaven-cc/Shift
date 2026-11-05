@@ -80,7 +80,7 @@ grant execute on function public.shift_claim_direct_due(integer) to service_role
 -- ordinary SHIFT accounts. Account ownership is checked by the Edge Function.
 create or replace function public.shift_save_direct_account(
  p_workspace uuid, p_handle text, p_did text, p_app_password text
-) returns uuid language plpgsql security definer set search_path='' as $
+) returns uuid language plpgsql security definer set search_path='' as $fn$
 declare v_id uuid; v_old uuid; v_vault uuid;
 begin
  if p_workspace is null or p_app_password is null or length(p_app_password)<8 or length(p_app_password)>200 then
@@ -96,21 +96,21 @@ begin
  returning id into v_id;
  if v_old is not null then delete from vault.secrets where id=v_old; end if;
  return v_id;
-end; $;
+end; $fn$;
 revoke all on function public.shift_save_direct_account(uuid,text,text,text) from public,anon,authenticated;
 grant execute on function public.shift_save_direct_account(uuid,text,text,text) to service_role;
 
 create or replace function public.shift_get_direct_secret(p_id uuid)
-returns text language sql security definer set search_path='' as $
+returns text language sql security definer set search_path='' as $fn$
  select v.decrypted_secret from public.shift_direct_accounts a
  join vault.decrypted_secrets v on v.id=a.secret_id
  where a.id=p_id and a.state='connected' and a.platform='bluesky'
-$;
+$fn$;
 revoke all on function public.shift_get_direct_secret(uuid) from public,anon,authenticated;
 grant execute on function public.shift_get_direct_secret(uuid) to service_role;
 
 create or replace function public.shift_disconnect_direct_account(p_id uuid,p_workspace uuid)
-returns void language plpgsql security definer set search_path='' as $
+returns void language plpgsql security definer set search_path='' as $fn$
 declare v_secret uuid;
 begin
  select secret_id into v_secret from public.shift_direct_accounts
@@ -118,7 +118,7 @@ begin
  if v_secret is null then raise exception 'Account not found'; end if;
  update public.shift_direct_accounts set state='disconnected' where id=p_id and workspace_id=p_workspace;
  delete from vault.secrets where id=v_secret;
-end; $;
+end; $fn$;
 revoke all on function public.shift_disconnect_direct_account(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.shift_disconnect_direct_account(uuid,uuid) to service_role;
 
