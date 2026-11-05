@@ -79,11 +79,29 @@ class Workspace extends ChangeNotifier {
     final profileRow = data['profile'] as Map<String,dynamic>;
     // Never apply local content or local approvals to an authenticated account.
     profile = {'name': profileRow['display_name'] as String? ?? '',
+      'email': ShiftCloud.user?.email ?? '',
       'language': profileRow['locale'] as String? ?? 'en',
       'timezone': profileRow['timezone'] as String? ?? 'UTC'};
+    final remoteAvatar = profileRow['avatar_path'] as String?;
+    if (remoteAvatar != null && remoteAvatar.isNotEmpty) {
+      profile['avatarCloudPath'] = remoteAvatar;
+      try { profile['avatar'] = (await ShiftCloud.downloadImage(remoteAvatar))!; }
+      catch (_) { cloudError = 'Your profile image could not be downloaded.'; }
+    }
     brand = {for(final e in (bp['settings'] as Map? ?? {}).entries)
       if (e.value is String) e.key.toString(): e.value as String};
     brand['name'] = bp['name'] as String? ?? '';
+    // Typed brand fields are authoritative and are consumed by AI generation.
+    brand['description'] = bp['description'] as String? ?? brand['description'] ?? '';
+    brand['audience'] = bp['audience'] as String? ?? brand['audience'] ?? '';
+    brand['tone'] = bp['brand_voice'] as String? ?? brand['tone'] ?? '';
+    brand['guidelines'] = bp['guidelines'] as String? ?? brand['guidelines'] ?? '';
+    final remoteLogo = bp['logo_path'] as String?;
+    if (remoteLogo != null && remoteLogo.isNotEmpty) {
+      brand['logoCloudPath'] = remoteLogo;
+      try { brand['logo'] = (await ShiftCloud.downloadImage(remoteLogo))!; }
+      catch (_) { cloudError = 'Your brand logo could not be downloaded.'; }
+    }
     preferences = {for(final e in (pref['preferences'] as Map? ?? {}).entries)
       if (e.value is String) e.key.toString(): e.value as String};
     interests = Set<String>.from(pref['interests'] as List? ?? []);
@@ -149,6 +167,24 @@ class Workspace extends ChangeNotifier {
     await restore();
     entered = false;
     notifyListeners();
+  }
+
+  /// All signed-in edits are persisted remotely. Roll back visible state on
+  /// failure instead of claiming that a local-only change is cloud-synced.
+  Future<bool> updateSettings(String section, Map<String,String> values) async {
+    final destination = section == 'profile' ? profile :
+      section == 'brand' ? brand : preferences;
+    final previous = Map<String,String>.from(destination);
+    destination.addAll(values);
+    final result = await persist();
+    if (!result) {
+      destination..clear()..addAll(previous);
+      notifyListeners();
+    } else {
+      record('${section[0].toUpperCase()}${section.substring(1)} updated',
+        '/settings/$section');
+    }
+    return result;
   }
 
   Future<bool> saveCloudSettings() async {
