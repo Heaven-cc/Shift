@@ -12,7 +12,7 @@ Go to the SHIFT project's **Edge Functions → Secrets** screen. Configure:
 - `SHIFT_AI_MODEL` = an enabled model ID for that provider, compatible with the selected endpoint.
 - `SHIFT_AI_BASE_URL` = optional explicit HTTPS **chat completions endpoint** for `openai-compatible` only. It must not target a private/local host.
 
-**Groq is optional** and not a hardcoded default. The legacy `shift-generate-text` feature still uses its existing `GROQ_API_KEY` and `GROQ_MODEL` until migrated or retired; its settings are separate from the new independent `shift-ai` service. The new AI Workspace does not consume the legacy Groq key.
+**Groq is optional** and not a hardcoded default. The existing `shift-generate-text` Studio caption and editing tools have also been migrated to `SHIFT_AI_PROVIDER`, `SHIFT_AI_MODEL`, and `SHIFT_AI_API_KEY`. The older Groq-specific key is no longer required by SHIFT's active text-generation path. Groq is an optional explicitly selected provider.
 
 The backend reports only the selected provider, model, and whether credentials are present; it never returns the API key.
 
