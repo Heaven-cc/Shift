@@ -111,8 +111,8 @@ async function dispatch(req:Request) {
    if(!uri.startsWith("at://"))fail("missing_confirmation");
    await supa.from("shift_direct_jobs").update({state:"published",remote_uri:uri,error_code:null,
     finished_at:new Date().toISOString()}).eq("id",id);
-   await supa.from("shift_content_posts").update({status:"published"}).eq("id",job.post_id)
-     .eq("approved_version",job.version_number);
+   // Record per-destination delivery on the job. Do not mutate the shared post
+   // status here: the same approved revision may have other pending destinations.
    published++;
   }catch(err){
    const code=err instanceof Error?err.message:"provider_unavailable";
