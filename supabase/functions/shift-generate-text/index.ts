@@ -159,7 +159,7 @@ Deno.serve(async (req:Request)=>{
       method:"POST",signal:controller.signal,
       headers:{"authorization":`Bearer ${providerKey}`,"content-type":"application/json"},
       body:JSON.stringify({
-        model:providerModel,temperature:0.6,max_tokens:900,
+        model:providerModel,...(provider==="openai"?{max_completion_tokens:1200}:{max_tokens:1200}),
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+
