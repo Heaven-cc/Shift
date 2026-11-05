@@ -107,7 +107,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       final data = Map<String, dynamic>.from(response.data as Map);
       if (data['error'] != null) {
         if (data['error'] == 'ai_provider_not_configured') {
-          throw StateError('SHIFT needs the server-side Groq API key and model before AI generation can run.');
+          throw StateError('Configure the chosen SHIFT AI provider, API key and model in SHIFT Supabase Edge Function secrets.');
         }
         throw StateError('AI request unavailable: ${data['error']}');
       }
