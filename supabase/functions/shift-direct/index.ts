@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.78.0";
+import { createSocial, connectedAccountRef } from "npm:@opencoredev/social-sdk@0.5.0";
+import { bluesky as sdkBluesky } from "npm:@opencoredev/social-sdk@0.5.0/bluesky";
 
 const env = (k:string) => Deno.env.get(k) ?? "";
 const db = () => createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{
@@ -98,16 +100,21 @@ async function dispatch(req:Request) {
   try{
    const auth=await session(account.handle,password);
    if(auth.did!==account.did)fail("identity_changed");
-   const postRecord={
-     $type:"app.bsky.feed.post",
-     text:content,createdAt:new Date().toISOString()
-   };
-   const result=await request("POST","com.atproto.repo.createRecord",{
-    repo:auth.did,collection:"app.bsky.feed.post",record:postRecord,
-    // Stable record key makes repeated operator troubleshooting easier;
-    // the worker itself never automatically retries this job.
-   },auth.jwt);
-   const uri=String(result.uri??"");
+   // Use the actual Social SDK 0.5.0 Bluesky adapter instead of
+   // reimplementing publishing with raw XRPC. Auth and account ownership
+   // were verified before reaching this point.
+   const social=createSocial({backend:sdkBluesky({
+     auth:{service:"https://bsky.social",did:auth.did,accessJwt:auth.jwt},
+   })});
+   const result=await social.posts.publish({
+     targets:[{account:connectedAccountRef({
+       backend:"default",platform:"bluesky",accountId:auth.did,
+     })}],
+     content:{text:content},
+     idempotencyKey:id,
+   });
+   const outcome=result.outcomes[0];
+   const uri=outcome?.state==="published" ? outcome.post.postId : "";
    if(!uri.startsWith("at://"))fail("missing_confirmation");
    await supa.from("shift_direct_jobs").update({state:"published",remote_uri:uri,error_code:null,
     finished_at:new Date().toISOString()}).eq("id",id);
