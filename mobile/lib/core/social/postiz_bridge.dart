@@ -1,4 +1,3 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../cloud/shift_cloud.dart';
 
 /// The real Postiz API is invoked only through an authenticated SHIFT Edge Function.
