@@ -89,10 +89,10 @@ class ShiftSocialPlatforms {
     ShiftSocialPlatform(
       id: 'bluesky', name: 'Bluesky',
       accountRequirement: 'Bluesky account',
-      publishingNote: 'Posts are supported by the direct SDK adapter, subject to authorized credentials.',
+      publishingNote: 'Direct Bluesky text publishing is available through SHIFT Supabase after connecting with an app password.',
       developerUrl: 'https://docs.bsky.app/',
       homeUrl: 'https://bsky.app/',
-      connectionNote: 'Configure secure Bluesky account authorization in the trusted integration.',
+      connectionNote: 'Connect Bluesky in the Supabase publishing panel using a dedicated app password.',
     ),
     ShiftSocialPlatform(
       id: 'pinterest', name: 'Pinterest',
