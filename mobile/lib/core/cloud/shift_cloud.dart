@@ -27,6 +27,28 @@ class ShiftCloud {
     return rows.first['id'] as String;
   }
 
+  /// Upload a private identity image under the owner-scoped Storage path.
+  /// Never put a device filesystem path into the cloud settings record.
+  static Future<String> uploadIdentityImage(
+    String workspaceId, File file, String kind,
+  ) async {
+    final account = user;
+    if (account == null) throw StateError('Sign in to upload your image.');
+    if (!['avatar', 'brand'].contains(kind)) throw ArgumentError('Invalid image type');
+    if (!await file.exists()) throw StateError('Image no longer exists on this device.');
+    final bytes = await file.length();
+    if (bytes < 1 || bytes > 10 * 1024 * 1024) {
+      throw StateError('Choose an image smaller than 10 MB.');
+    }
+    final path = '${account.id}/$workspaceId/identity/${kind}_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    await client.storage.from('shift-media').upload(
+      path, file, fileOptions: const FileOptions(
+        contentType: 'image/jpeg', upsert: false,
+      ),
+    );
+    return path;
+  }
+
   static Future<void> saveSettings({
     required String workspaceId,
     required Map<String,String> profile,
@@ -42,6 +64,7 @@ class ShiftCloud {
       'display_name': profile['name'] ?? '',
       'locale': profile['language'] ?? 'en',
       'timezone': profile['timezone'] ?? 'UTC',
+      'avatar_path': profile['avatarCloudPath'],
     }).eq('user_id', u.id);
     await client.from('shift_brands').update({
       'name': brand['name'] ?? '',
@@ -49,7 +72,10 @@ class ShiftCloud {
       'audience': brand['audience'] ?? '',
       'brand_voice': brand['tone'] ?? '',
       'guidelines': brand['guidelines'] ?? '',
-      'settings': brand,
+      'logo_path': brand['logoCloudPath'],
+      // Only stable brand data and cloud references belong in Postgres.
+      'settings': Map<String,String>.from(brand)
+        ..remove('logo')..remove('localLogoPath'),
     }).eq('workspace_id',workspaceId);
     await client.from('shift_preferences').update({
       'preferences': preferences,
