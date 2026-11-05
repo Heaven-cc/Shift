@@ -1,6 +1,6 @@
 # SHIFT Social SDK — paused cloud execution
 
-This directory establishes a **server-side, offline-only** integration foundation for `@opencoredev/social-sdk@0.5.0`. It **does not** connect social accounts, publish real posts, run a scheduler, create a worker or deploy anything. SHIFT's dedicated Supabase project and Flutter app are unchanged.
+This directory establishes a **server-side, offline-only** integration foundation for `@opencoredev/social-sdk@0.5.0`. It **does not** connect social accounts, publish real posts, run a scheduler, create a worker or deploy anything. SHIFT's dedicated Supabase project is unchanged; the Flutter application now exposes the additional social destinations for setup and previews.
 
 ## Verify locally
 
