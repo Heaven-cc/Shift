@@ -50,3 +50,11 @@ create policy "shift_postiz_schedule_owner_read" on public.shift_postiz_schedule
   ));
 -- No INSERT/UPDATE/DELETE grants for authenticated clients; only authenticated edge requests
 -- validated against workspace ownership can drive mutations with a server-side credential.
+
+-- Keep cloud content consistent with all Flutter destinations.
+alter table public.shift_content_versions drop constraint if exists shift_content_versions_platform_check;
+alter table public.shift_content_versions add constraint shift_content_versions_platform_check
+  check(platform in ('Instagram','Facebook','TikTok','LinkedIn','X','Threads','YouTube','Bluesky','Pinterest'));
+alter table public.shift_social_accounts drop constraint if exists shift_social_accounts_provider_check;
+alter table public.shift_social_accounts add constraint shift_social_accounts_provider_check
+  check(provider in ('instagram','facebook','tiktok','linkedin','x','threads','youtube','bluesky','pinterest'));
