@@ -35,8 +35,8 @@ Deno.serve(async (req:Request)=>{
     try{
       const chosen=new URL(Deno.env.get("SHIFT_AI_BASE_URL")??"");
       if(chosen.protocol==="https:"&&!chosen.username&&!chosen.password&&!chosen.hash&&
-        !/^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(1[6-9]|2\\d|3[01])\\.|.*\\.local$)/i.test(chosen.hostname)&&
-        !/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(chosen.hostname)){
+        !/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(chosen.hostname)&&
+        !/^\d+\.\d+\.\d+\.\d+$/.test(chosen.hostname)){
         endpoint=chosen.toString();
       }
     }catch{/* Invalid custom endpoint */}
