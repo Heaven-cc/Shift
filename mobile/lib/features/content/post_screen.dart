@@ -29,7 +29,11 @@ class _PostsState extends ConsumerState<PostsScreen> {
   @override Widget build(BuildContext context) {
     final posts = ref.watch(workspaceProvider).posts.where((p) => (!widget.approvals || p.status == PostStatus.pendingApproval) && p.title.toLowerCase().contains(query.toLowerCase()) && (status == 'All' || statusLabel(p.status) == status)).toList();
     return Scaffold(appBar: AppBar(title: Text(widget.approvals ? 'Approval inbox' : 'Draft library')), body: PageBody(children: [
-      ServiceNotice(text: widget.approvals ? 'Local review queue • These decisions do not authorize server publishing.' : 'Saved on this device • No cloud sync'),
+      ServiceNotice(text: widget.approvals
+        ? (w.cloudAuthenticated ? 'Cloud approval inbox • Only approved revisions can be scheduled to connected accounts.'
+          : 'Offline review queue • Local decisions do not authorize cloud publishing.')
+        : (w.cloudAuthenticated ? 'Saved drafts are synced to your SHIFT Cloud workspace.'
+          : 'Offline drafts are saved on this device until you sign in and import them.')),
       TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(labelText: 'Search content', prefixIcon: Icon(Icons.search))),
       const SizedBox(height: 12),
       if (!widget.approvals) DropdownButton<String>(value: status, items: ['All', ...PostStatus.values.map(statusLabel)].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => status = v!)),
@@ -109,7 +113,7 @@ class PostScreen extends ConsumerWidget {
       Wrap(spacing: 8, runSpacing: 8, children: [
         if (p.status != PostStatus.pendingApproval && p.status != PostStatus.approved) OutlinedButton(onPressed: () => change(PostStatus.pendingApproval, 'Submitted for review'), child: const Text(w.cloudAuthenticated ? 'Submit for cloud review' : 'Submit for local review')),
         if (p.status == PostStatus.pendingApproval) ...[
-          FilledButton(onPressed: () async { if (await confirm(context, w.cloudAuthenticated ? 'Approve cloud version ${p.versions.length}?' : 'Approve local version ${p.versions.length}?', w.cloudAuthenticated ? 'Approve this exact saved revision in SHIFT Cloud. You must still schedule it to a connected account.' : 'Approve this version locally. Local approval alone does not authorize publishing.', action: 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: Text(w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')),
+          FilledButton(onPressed: () async { if (await confirm(context, w.cloudAuthenticated ? 'Approve cloud version ${p.versions.length}?' : 'Approve local version ${p.versions.length}?', w.cloudAuthenticated ? 'Approve this exact saved revision in SHIFT Cloud. You must still schedule it to a connected account.' : 'Approve this version locally. Local approval alone does not authorize publishing.', action: w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')) await change(PostStatus.approved, 'Version approved'); }, child: Text(w.cloudAuthenticated ? 'Approve cloud revision' : 'Approve locally')),
           OutlinedButton(onPressed: () => change(PostStatus.draft, 'Returned to drafts'), child: const Text('Reject / return to draft')),
         ],
         OutlinedButton(onPressed: () => unavailable(context, 'AI regeneration'), child: const Text('Regenerate')),
