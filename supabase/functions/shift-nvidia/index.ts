@@ -97,6 +97,21 @@ async function handler(req:Request){
  let body:Record<string,unknown>;
  try{body=obj(await req.json());}catch{return reply({error:"invalid_json"},400)}
  const action=clean(body.action,30);
+ if(action==="history"){
+  const {data,error}=await actor.db.from("shift_nvidia_media")
+    .select("id,model_slot,model_id,media_type,prompt,storage_path,created_at")
+    .eq("workspace_id",actor.wid).order("created_at",{ascending:false}).limit(40);
+  if(error)throw Error("history_unavailable");
+  const items=[];
+  for(const item of data??[]){
+    const {data:signed}=await actor.db.storage.from("shift-media")
+      .createSignedUrl(item.storage_path,600);
+    items.push({id:item.id,modelId:item.model_slot,model:item.model_id,
+      type:item.media_type,prompt:item.prompt,createdAt:item.created_at,
+      path:item.storage_path,url:signed?.signedUrl??null});
+  }
+  return reply({items});
+ }
  if(action==="status")return reply({models:slots.map(s=>{
   const c=config(s);return {id:s.id,label:s.label,type:s.type,hint:s.hint,model:c.model||null,
    configured:c.configured,endpointConfigured:!!c.endpoint,protocol:c.protocol,
@@ -117,6 +132,18 @@ async function handler(req:Request){
   return reply({error:"unsupported_action_for_model"},400);
  const prompt=clean(body.prompt,1300);
  if(prompt.length<5)return reply({error:"invalid_prompt"},400);
+ const {data:brand}=await actor.db.from("shift_brands")
+  .select("name,description,audience,brand_voice,guidelines,settings")
+  .eq("workspace_id",actor.wid).maybeSingle();
+ const brandContext=brand?[
+   clean(brand.name,120),clean(brand.description,300),
+   "Audience: "+clean(brand.audience,150),
+   "Style: "+clean(brand.brand_voice,150),
+   "Brand rules: "+clean(brand.guidelines,350)
+ ].filter(Boolean).join("; "):"";
+ // Voice is spoken verbatim: do not synthesize private brand instructions.
+ const mediaPrompt=slot.type==="voice"?prompt:
+   (brandContext?prompt+"\nBrand context: "+brandContext:prompt).slice(0,2200);
  const {data:allowed,error:rateError}=await actor.db.rpc("shift_ai_allow_request",{
   p_user:actor.uid,p_workspace:actor.wid,p_category:"image"});
  if(rateError||allowed!==true)return reply({error:"media_generation_limit_reached"},429);
@@ -136,6 +163,10 @@ async function handler(req:Request){
    const bytes=new Uint8Array(await response.arrayBuffer());
    if(bytes.length>8*1024*1024)throw Error("media_too_large");
    const saved=await save(actor.db,actor.uid,actor.wid,bytes,"audio/wav","wav");
+   const {error:historyError}=await actor.db.from("shift_nvidia_media").insert({
+    workspace_id:actor.wid,user_id:actor.uid,model_slot:slot.id,
+    model_id:c.model,media_type:"voice",prompt,storage_path:saved.path,mime_type:"audio/wav"});
+   if(historyError)throw Error("media_history_failed");
    return reply({type:"voice",modelId:slot.id,model:c.model,...saved});
   }
   let source:string|undefined;
@@ -154,7 +185,7 @@ async function handler(req:Request){
   }
   // Only explicit model-specific NVIDIA HTTPS endpoints may be used for image requests.
   // JSON image protocols require base64 output. URL-only APIs are not implicitly fetched.
-  const payload:Record<string,unknown>={model:c.model,prompt,response_format:"b64_json",n:1};
+  const payload:Record<string,unknown>={model:c.model,prompt:mediaPrompt,response_format:"b64_json",n:1};
   if(source)payload.image=source;
   response=await withDeadline(c.endpoint,{method:"POST",
    headers:{"Authorization":"Bearer "+c.key,"Content-Type":"application/json"},
@@ -166,13 +197,18 @@ async function handler(req:Request){
   const format=sniff(bytes);
   if(!format)throw Error("unsupported_image_format");
   const saved=await save(actor.db,actor.uid,actor.wid,bytes,format.mime,format.ext);
+  const {error:historyError}=await actor.db.from("shift_nvidia_media").insert({
+   workspace_id:actor.wid,user_id:actor.uid,model_slot:slot.id,
+   model_id:c.model,media_type:slot.type,prompt,storage_path:saved.path,
+   mime_type:format.mime});
+  if(historyError)throw Error("media_history_failed");
   return reply({type:slot.type,modelId:slot.id,model:c.model,...saved});
  }catch(e){
   const code=e instanceof Error?e.message:"model_error";
   const safe=["nvidia_rate_limited","nvidia_credentials_rejected","nvidia_request_failed",
    "media_too_large","invalid_media_output","image_protocol_unavailable",
    "unsupported_image_format","unexpected_audio_response","source_not_found","source_too_large",
-   "media_storage_failed","media_link_failed","invalid_source_image"].includes(code)?code:"model_error";
+   "media_storage_failed","media_link_failed","invalid_source_image","media_history_failed"].includes(code)?code:"model_error";
   return reply({error:safe},safe==="nvidia_rate_limited"?429:502);
  }
 }
