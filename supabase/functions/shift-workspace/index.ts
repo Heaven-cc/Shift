@@ -48,7 +48,7 @@ Deno.serve(async(request)=>{
     typeof x==="string"&&x.length<=80).slice(0,40):[];
    const notifications=Object.fromEntries(Object.entries(record(body.notifications))
      .filter(([k,v])=>k.length<=80&&typeof v==="boolean"));
-   if(!brand.name||brand.name.length>120||!profile.timezone||profile.timezone.length>100)
+   if(brand.name.length>120||!profile.timezone||profile.timezone.length>100)
     return reply({error:"invalid_settings"},400);
    for(const [table,key,changes] of [
       ["shift_profiles","user_id",{
@@ -56,7 +56,7 @@ Deno.serve(async(request)=>{
         timezone:profile.timezone,avatar_path:profile.avatarCloudPath||null
       }],
       ["shift_brands","workspace_id",{
-        name:brand.name,description:brand.description,audience:brand.audience,
+        name:brand.name||"My brand",description:brand.description,audience:brand.audience,
         brand_voice:brand.tone,guidelines:brand.guidelines,
         logo_path:brand.logoCloudPath||null,settings:brand
       }],
@@ -64,7 +64,7 @@ Deno.serve(async(request)=>{
         preferences:prefs,interests,notification_preferences:notifications
       }],
       ["shift_workspaces","id",{
-        name:brand.name,onboarding_completed:body.onboardingComplete===true,
+        name:brand.name||"My workspace",onboarding_completed:body.onboardingComplete===true,
         timezone:profile.timezone
       }]
     ] as const){
