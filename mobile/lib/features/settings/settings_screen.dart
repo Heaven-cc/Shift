@@ -284,8 +284,10 @@ class AccountsScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(platform.publishingNote),
             const SizedBox(height: 8),
-            const Text('Not connected • No permissions granted',
-                style: TextStyle(fontSize: 12)),
+            Text(platform.id == 'bluesky'
+                ? 'Live connection status appears in the Supabase panel above.'
+                : 'Direct OAuth is not yet configured for this provider.',
+                style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(
