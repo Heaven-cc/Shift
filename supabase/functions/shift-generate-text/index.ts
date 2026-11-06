@@ -22,9 +22,9 @@ Deno.serve(async (req:Request)=>{
   const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   // All new SHIFT AI calls share a backend-only, explicitly selected provider.
   // Do not infer a default from the older Groq integration.
-  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")??"").toLowerCase();
-  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
-  const roles=selected==="KIMI"?["KIMI","MISTRAL"]:["MISTRAL","KIMI"];
+  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
+  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+  const roles=selected==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
   const aiCandidates=provider==="nvidia"?
     roles.map(role=>({
       key:Deno.env.get("SHIFT_NVIDIA_"+role+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY")||"",
@@ -193,6 +193,7 @@ Deno.serve(async (req:Request)=>{
      try{
      const providerKey=candidate.key,providerModel=candidate.model;
      const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
+      const isGlm53=provider==="nvidia"&&providerModel==="z-ai/glm-5.3";
      const response=await fetch(endpoint,{
       method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(29000)]),
       headers:{"authorization":`Bearer ${providerKey}`,
@@ -201,7 +202,7 @@ Deno.serve(async (req:Request)=>{
       body:JSON.stringify({
         model:providerModel,stream:isMistral4,
         ...(provider==="openai"?{max_completion_tokens:1100}:{max_tokens:1100}),
-        ...(isMistral4?{reasoning_effort:"low"}:{}),
+        ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+

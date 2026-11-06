@@ -10,7 +10,7 @@ type Category="text"|"image"|"image_edit"|"voice";
 type Slot={id:string;label:string;type:Category;hint:string;defaultModel:string;protocol:string};
 const slots:Slot[]=[
  {id:"mistral",label:"Mistral Large 4",type:"text",hint:"Primary writing and research analysis",defaultModel:"",protocol:"chat"},
- {id:"kimi",label:"Kimi K3.1 Pro",type:"text",hint:"Complex analysis",defaultModel:"",protocol:"chat"},
+ {id:"glm",label:"GLM 5.3",type:"text",hint:"Reasoning and alternate text generation",defaultModel:"",protocol:"chat"},
  {id:"nemotron_embed",label:"Nemotron 3.5 Embed 1B",type:"text",hint:"Semantic search and knowledge retrieval (not caption generation)",defaultModel:"nvidia/nemotron-3.5-embed-1b",protocol:"embeddings"},
  {id:"flux_klein",label:"FLUX 3 Klein",type:"image",hint:"General image generation",defaultModel:"",protocol:"images"},
  {id:"qwen_image",label:"Qwen Image",type:"image",hint:"Text-rich graphics",defaultModel:"",protocol:"images"},

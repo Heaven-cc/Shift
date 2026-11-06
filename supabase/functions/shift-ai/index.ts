@@ -8,9 +8,9 @@ const reply=(x:any,status=200)=>new Response(JSON.stringify(x),{status,headers})
 const admin=()=>createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false}});
 const platforms=new Set(["Instagram","Facebook","TikTok","LinkedIn","X","Threads","YouTube","Bluesky","Pinterest"]);
 function settings(){
- const provider=env("SHIFT_AI_PROVIDER").toLowerCase();
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
- const roles=preferred==="KIMI"?["KIMI","MISTRAL"]:["MISTRAL","KIMI"];
+ const provider=(env("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
+ const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+ const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
  const available=roles.map(role=>({
   key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
   model:env("SHIFT_NVIDIA_"+role+"_MODEL")
@@ -105,12 +105,13 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
  }
  const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
+ const isGlm53=c.provider==="nvidia"&&c.model==="z-ai/glm-5.3";
  const useStream=isMistral4;
  const tokens=isMistral4?1100:1800;
  const payload={
   model:c.model,stream:useStream,
   ...(c.provider==="openai"?{max_completion_tokens:tokens}:{max_tokens:tokens}),
-  ...(isMistral4?{reasoning_effort:"low"}:{}),
+  ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
   messages:[{role:"system",content:system},{role:"user",content:prompt}]
  };
  const controller=new AbortController();
@@ -156,8 +157,8 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
 }
 // Try each independently configured text model without asking the user to choose.
 async function modelCallWithFallback(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean){
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
- const roles=preferred==="KIMI"?["KIMI","MISTRAL"]:["MISTRAL","KIMI"];
+ const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+ const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
  const options=c.provider==="nvidia"?roles.map(role=>({
    ...c,key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
    model:env("SHIFT_NVIDIA_"+role+"_MODEL")
