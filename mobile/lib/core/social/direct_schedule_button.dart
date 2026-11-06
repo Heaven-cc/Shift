@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import '../cloud/shift_cloud.dart';
 import '../domain/models.dart';
 import 'direct_bridge.dart';
@@ -53,8 +54,7 @@ class DirectScheduleButton extends StatelessWidget {
       });
       if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content:Text('Post queued in SHIFT. Publishing depends on the connected account remaining valid.')));
-    }catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content:Text(e.toString().replaceFirst('Bad state: ',''))));}
+    }catch(e){if(context.mounted)showShiftError(context,e,title:'Unable to schedule post');}
   }
   @override Widget build(BuildContext context)=>OutlinedButton(
     onPressed:()=>schedule(context),child:const Text('Schedule with SHIFT'));
