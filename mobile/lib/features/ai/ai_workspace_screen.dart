@@ -29,6 +29,32 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   List<Map<String,dynamic>> plans=[],history=[];
   @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
   @override void dispose(){prompt.dispose();mediaPrompt.dispose();super.dispose();}
+  String displayAiError(Object error){
+    final raw=error.toString();
+    if(raw.contains('provider_timeout'))return
+      'The NVIDIA model took too long to respond. Try a shorter request or retry. '
+      'Your API key and model selection have not been changed.';
+    if(raw.contains('provider_credentials_rejected'))return
+      'NVIDIA rejected the API key or this model is not authorized for your account. '
+      'Check the key and model access in NVIDIA Build.';
+    if(raw.contains('provider_model_or_request_invalid'))return
+      'NVIDIA rejected the model ID or request format. Check the exact model ID '
+      'shown on its NVIDIA Build API page.';
+    if(raw.contains('provider_rate_limited'))return
+      'NVIDIA rate limit reached. Try again later or review your provider quota.';
+    if(raw.contains('provider_upstream_error')||raw.contains('provider_network_error'))return
+      'NVIDIA is temporarily unavailable or the connection failed. Try again.';
+    if(raw.contains('provider_empty_response')||raw.contains('provider_invalid_response')
+       ||raw.contains('invalid_model_output'))return
+      'The AI response was incomplete. Try a simpler request, then retry.';
+    if(raw.contains('research_provider_not_configured'))return
+      'Online research needs SHIFT_BRAVE_SEARCH_API_KEY in SHIFT Supabase secrets.';
+    if(raw.contains('ai_provider_not_configured'))return
+      'Set the NVIDIA API key and exact Mistral/Kimi model ID in SHIFT Supabase secrets.';
+    if(raw.contains('generation_limit_reached'))return
+      'SHIFT AI request limit reached. Try again later.';
+    return 'SHIFT AI request failed. '+raw.replaceFirst('Bad state: ', '');
+  }
   Future<Map<String,dynamic>> action(String operation,[Map<String,dynamic> extra=const {}])async{
     final r=await ShiftCloud.client.functions.invoke('shift-ai',
       body:<String,dynamic>{'action':operation,...extra});
@@ -110,7 +136,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
         }
         message='';
       });
-    }catch(e){if(mounted)setState(()=>message=e.toString());}
+    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
   Future<void> run()async{
@@ -122,7 +148,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       if(res['status']!='completed'||res['result'] is! Map)throw StateError('Request did not complete');
       if(mounted)setState(()=>output=Map<String,dynamic>.from(res['result'] as Map));
       await refresh();
-    }catch(e){if(mounted)setState(()=>message=e.toString());}
+    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
   Future<void> accept(Map<String,dynamic> p)async{
@@ -137,7 +163,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     try{await action('accept_plan',{'itemId':p['id']});
       await ref.read(workspaceProvider).openCloud();await refresh();
       if(mounted)toast(context,'Saved as an unapproved cloud draft.');
-    }catch(e){if(mounted)setState(()=>message=e.toString());}
+    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
   Widget section(String label,dynamic data){
