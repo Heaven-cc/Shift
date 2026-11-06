@@ -73,7 +73,7 @@ String shiftFriendlyError(Object? error) {
   if (detail.length <= 160 &&
       RegExp(r'^(sign in to|choose |enter |select |approve this|write or generate)')
         .hasMatch(raw) &&
-      !RegExp(r'(exception|supabase|provider_|api key|https?://|\\{)')
+      !RegExp(r'(exception|supabase|provider_|api key|https?://)')
         .hasMatch(raw)) {
     return detail;
   }
