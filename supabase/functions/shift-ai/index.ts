@@ -59,14 +59,14 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   // "none" is unsupported and caused 400 invalid_request_error.
   // Use low reasoning for interactive social media planning.
   const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
-  const tokenBudget=isMistral4?1800:1800;
+  const tokenBudget=isMistral4?1400:1800;
   const payload={
     model:c.model,stream:false,
     ...(c.provider==="openai"?{max_completion_tokens:tokenBudget}:{max_tokens:tokenBudget}),
     ...(isMistral4?{reasoning_effort:"low"}:{}),
     messages:[{role:"system",content:system},{role:"user",content:prompt}]
   };
-  r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(45000),
+  r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(90000),
    headers:{"Content-Type":"application/json","Accept":"application/json",
      "Authorization":"Bearer "+c.key},
    body:JSON.stringify(payload)});
@@ -96,6 +96,25 @@ async function handler(req:Request){
  let body:any;try{body=obj(await req.json())}catch{return reply({error:"invalid_json"},400)}
  const a=await identity(req),cfg=settings(),action=clean(body.action,30);
  if(action==="status")return reply({configured:cfg.configured,provider:cfg.configured?cfg.provider:null,model:cfg.configured?cfg.model:null,researchAvailable:!!(env("SHIFT_BRAVE_SEARCH_API_KEY")||(cfg.configured&&cfg.provider==="openai")),researchMethod:env("SHIFT_BRAVE_SEARCH_API_KEY")?"brave":cfg.configured&&cfg.provider==="openai"?"openai_web_search":null,credentialStorage:"supabase_edge_secrets",autonomousPublishing:false});
+ if(action==="job_status"){
+  const jobId=clean(body.jobId,60);
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId))
+   return reply({error:"invalid_job_id"},400);
+  const {data:job,error}=await a.db.from("shift_generation_jobs")
+   .select("id,request_key,status,result,error_code,created_at,completed_at")
+   .eq("id",jobId).eq("workspace_id",a.wid).single();
+  if(error||!job||!String(job.request_key??"").startsWith("shift-workspace-"))
+    return reply({error:"job_not_found"},404);
+  // If a background isolate was terminated, avoid showing a stuck job forever.
+  if(job.status==="running"&&Date.now()-Date.parse(job.created_at)>180000){
+   await a.db.from("shift_generation_jobs")
+    .update({status:"failed",error_code:"provider_timeout",completed_at:new Date().toISOString()})
+    .eq("id",job.id).eq("workspace_id",a.wid).eq("status","running");
+   return reply({jobId:job.id,status:"failed",result:null,error:"provider_timeout"});
+  }
+  return reply({jobId:job.id,status:job.status,result:job.result??null,
+   error:job.status==="failed"?(job.error_code??"ai_failed"):null});
+ }
  if(action==="history"){const {data,error}=await a.db.from("shift_generation_jobs").select("id,request_key,status,result,error_code,created_at").eq("workspace_id",a.wid).order("created_at",{ascending:false}).limit(80);if(error)throw Error("storage_error");return reply({history:(data||[]).filter(x=>String(x.request_key||"").startsWith("shift-workspace-")).slice(0,25)})}
  if(action==="plan_items"){const {data,error}=await a.db.from("shift_ai_plan_items").select("id,title,caption,platform,planned_at,state,post_id").eq("workspace_id",a.wid).order("planned_at").limit(100);if(error)throw Error("storage_error");return reply({items:data||[]})}
  if(action==="accept_plan"){const id=clean(body.itemId,50);if(!/^[a-f0-9-]{36}$/i.test(id))return reply({error:"invalid_item"},400);const {data,error}=await a.caller.rpc("shift_accept_ai_plan",{p_item_id:id});return error?reply({error:"plan_accept_failed"},409):reply({accepted:true,postId:data,published:false})}
@@ -114,6 +133,12 @@ async function handler(req:Request){
  if(job.status!=="pending")return reply({jobId,status:job.status,error:"not_retryable"},409);
  const {data:claimed}=await a.db.from("shift_generation_jobs").update({status:"running"}).eq("id",jobId).eq("workspace_id",a.wid).eq("status","pending").select("id");
  if(!claimed?.length)return reply({error:"claim_failed"},409);
+ // New Flutter versions opt in to background generation. Older installed APKs
+ // continue using the previous synchronous response contract.
+ const asyncRequested=body.async===true;
+ // Return immediately to the mobile app. Keep generation alive in an
+ // EdgeRuntime background task, and let clients query job_status.
+ const execute=async()=>{
  try{
   const [{data:brand},{data:prefs},{data:profile},{data:policy}]=await Promise.all([
    a.db.from("shift_brands").select("name,description,audience,brand_voice,guidelines,settings").eq("workspace_id",a.wid).single(),
@@ -142,7 +167,7 @@ async function handler(req:Request){
   if(mode==="calendar"){const {error}=await a.db.from("shift_ai_plan_items").insert(items.map((x:any,i:number)=>({workspace_id:a.wid,generation_job_id:jobId,ordinal:i,title:x.title,caption:x.caption,platform:x.platform,planned_at:x.plannedAt,state:"proposed"})));if(error)throw Error("plan_storage_failed")}
   const {error:doneError}=await a.db.from("shift_generation_jobs").update({status:"completed",result,completed_at:new Date().toISOString()}).eq("id",jobId).eq("workspace_id",a.wid);
   if(doneError)throw Error("storage_error");
-  return reply({jobId,status:"completed",result});
+  console.info("SHIFT AI generation completed",{jobId,provider:cfg.provider});
  }catch(e){
   const m=e instanceof Error?e.message:"ai_failed";
   const safe=["blocked_topic","provider_unavailable","provider_timeout",
@@ -156,7 +181,20 @@ async function handler(req:Request){
   const status=safe==="provider_rate_limited"?429:
    safe==="provider_credentials_rejected"?502:
    safe==="provider_timeout"?504:502;
-  return reply({jobId,error:safe},status);
+  console.error("SHIFT AI generation failed",{jobId,error:safe,httpStatus:status});
  }
+ };
+ if(asyncRequested){
+  EdgeRuntime.waitUntil(execute());
+  return reply({jobId,status:"running",pollAfterMs:3000},202);
+ }
+ // Compatibility: do not break already installed Flutter builds.
+ await execute();
+ const {data:finished}=await a.db.from("shift_generation_jobs")
+  .select("status,result,error_code").eq("id",jobId).eq("workspace_id",a.wid).single();
+ if(finished?.status==="completed")
+  return reply({jobId,status:"completed",result:finished.result});
+ const errorCode=finished?.error_code??"ai_failed";
+ return reply({jobId,error:errorCode},errorCode==="provider_timeout"?504:502);
 }
 Deno.serve(async(req)=>{try{return await handler(req)}catch(e){const s=e instanceof Error&&e.message==="unauthorized"?"unauthorized":"request_failed";console.error("SHIFT AI",s);return reply({error:s},s==="unauthorized"?401:403)}});
