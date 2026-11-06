@@ -21,7 +21,7 @@ class ShiftSocialPlatform {
   final bool directSdk;
 
   String get integrationLabel => id == 'bluesky'
-      ? 'Supabase direct connection available • see account panel'
+      ? 'SHIFT direct connection available • see account panel'
       : directSdk
           ? 'Social SDK adapter available • OAuth not configured'
           : 'Requires separate provider integration';
@@ -91,10 +91,10 @@ class ShiftSocialPlatforms {
     ShiftSocialPlatform(
       id: 'bluesky', name: 'Bluesky',
       accountRequirement: 'Bluesky account',
-      publishingNote: 'Direct Bluesky text publishing is available through SHIFT Supabase after connecting with an app password.',
+      publishingNote: 'Direct Bluesky text publishing is available through SHIFT after connecting with an app password.',
       developerUrl: 'https://docs.bsky.app/',
       homeUrl: 'https://bsky.app/',
-      connectionNote: 'Connect Bluesky in the Supabase publishing panel using a dedicated app password.',
+      connectionNote: 'Connect Bluesky in the SHIFT publishing panel using a dedicated app password.',
     ),
     ShiftSocialPlatform(
       id: 'pinterest', name: 'Pinterest',
