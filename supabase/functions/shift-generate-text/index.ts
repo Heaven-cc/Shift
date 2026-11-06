@@ -63,6 +63,30 @@ Deno.serve(async (req:Request)=>{
     payload=await req.json();
     if(!payload||typeof payload!=="object"||Array.isArray(payload))throw Error("invalid");
   }catch{return respond({error:"invalid_json"},400);}
+  const action=safeText(payload.action,30);
+  if(action==="job_status"){
+    const jobId=safeText(payload.jobId,50);
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId))
+      return respond({error:"invalid_job_id"},400);
+    // Job status is fetched only under the authenticated user's RLS.
+    const {data:statusJob,error:statusError}=await userClient.from("shift_generation_jobs")
+      .select("id,status,result,error_code,request_key,created_at").eq("id",jobId).single();
+    if(statusError||!statusJob||!String(statusJob.request_key??"").startsWith("shift-"))
+      return respond({error:"job_not_found"},404);
+    if(statusJob.status==="running"&&Date.now()-Date.parse(statusJob.created_at)>180000){
+      const {data:ownWs}=await userClient.from("shift_workspaces")
+        .select("id").eq("owner_id",user.id).single();
+      if(ownWs) {
+        const db=createClient(url,serviceRole!,{auth:{persistSession:false,autoRefreshToken:false}});
+        await db.from("shift_generation_jobs").update({
+          status:"failed",error_code:"provider_timeout",completed_at:new Date().toISOString()
+        }).eq("id",jobId).eq("workspace_id",ownWs.id).eq("status","running");
+      }
+      return respond({jobId,status:"failed",error:"provider_timeout"});
+    }
+    return respond({jobId,status:statusJob.status,result:statusJob.result??null,
+      error:statusJob.status==="failed"?statusJob.error_code:null});
+  }
   const prompt=safeText(payload.prompt,4001);
   const requestKey=safeText(payload.requestKey,151);
   if(prompt.length<5||prompt.length>4000||requestKey.length<8||requestKey.length>150)
@@ -122,8 +146,9 @@ Deno.serve(async (req:Request)=>{
   if(claim.error)return respond({error:"generation_unavailable"},503);
   if(!claim.data?.length)return respond({jobId,status:"running"},202);
 
+  const generate=async():Promise<Response>=>{
   const controller=new AbortController();
-  const deadline=setTimeout(()=>controller.abort(),25000);
+  const deadline=setTimeout(()=>controller.abort(),payload.async===true?90000:25000);
   try {
     const safety=[
       "Create original social media copy in valid JSON only.",
@@ -161,11 +186,16 @@ Deno.serve(async (req:Request)=>{
       ideas:"Provide 5 original, specific post ideas in ideas; write a short helpful caption summarizing why they fit the brand.",
       strategy:"Offer a practical, brand-aware editorial strategy with positioning, 3-5 content pillars, a manageable weekly cadence and 2 concrete experiments. Never claim analytics are available when they are not."
     };
+    const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
     const response=await fetch(endpoint,{
       method:"POST",signal:controller.signal,
-      headers:{"authorization":`Bearer ${providerKey}`,"content-type":"application/json"},
+      headers:{"authorization":`Bearer ${providerKey}`,
+        "content-type":"application/json",
+        "accept":isMistral4?"text/event-stream":"application/json"},
       body:JSON.stringify({
-        model:providerModel,...(provider==="openai"?{max_completion_tokens:1200}:{max_tokens:1200}),
+        model:providerModel,stream:isMistral4,
+        ...(provider==="openai"?{max_completion_tokens:1100}:{max_tokens:1100}),
+        ...(isMistral4?{reasoning_effort:"low"}:{}),
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+
@@ -176,10 +206,53 @@ Deno.serve(async (req:Request)=>{
         ],
       }),
     });
-    if(!response.ok)throw Error("provider_failure");
-    const parsed=await response.json();
-    const text=parsed?.choices?.[0]?.message?.content;
-    if(typeof text!=="string"||text.length>20000)throw Error("invalid_provider_output");
+    if(!response.ok){
+      console.warn("SHIFT Studio NVIDIA rejected request",{provider,status:response.status});
+      if([401,403].includes(response.status))throw Error("provider_credentials_rejected");
+      if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
+      if(response.status===429)throw Error("provider_rate_limited");
+      if(response.status>=500)throw Error("provider_upstream_error");
+      throw Error("provider_unavailable");
+    }
+    let text="";
+    if(isMistral4){
+      if(!response.body)throw Error("provider_invalid_response");
+      const reader=response.body.getReader(),decoder=new TextDecoder();
+      let buffer="",doneMarker=false;
+      try{
+        while(!doneMarker){
+          const next=await reader.read();
+          if(next.done)break;
+          buffer+=decoder.decode(next.value,{stream:true}).replace(/\r\n/g,"\n");
+          if(buffer.length>128000)throw Error("provider_invalid_response");
+          let end=buffer.indexOf("\n\n");
+          while(end>=0){
+            const frame=buffer.slice(0,end);buffer=buffer.slice(end+2);
+            for(const ln of frame.split("\n")){
+              if(!ln.startsWith("data:"))continue;
+              const chunk=ln.slice(5).trim();
+              if(chunk==="[DONE]"){doneMarker=true;break;}
+              if(!chunk)continue;
+              let item:any;
+              try{item=JSON.parse(chunk)}catch{throw Error("provider_invalid_response")}
+              if(item.error)throw Error("provider_upstream_error");
+              const delta=item.choices?.[0]?.delta?.content;
+              if(typeof delta==="string")text+=delta;
+              if(text.length>20000)throw Error("provider_invalid_response");
+            }
+            if(doneMarker)break;
+            end=buffer.indexOf("\n\n");
+          }
+        }
+      }finally{if(doneMarker){try{await reader.cancel()}catch{/* best effort */}}}
+      if(!doneMarker)throw Error("provider_incomplete_stream");
+    }else{
+      const parsed=await response.json();
+      const content=parsed?.choices?.[0]?.message?.content;
+      if(typeof content!=="string")throw Error("provider_invalid_response");
+      text=content;
+    }
+    if(!text||text.length>20000)throw Error("provider_invalid_response");
     let obj:Record<string,unknown>;
     try {obj=JSON.parse(text);}catch{
       const start=text.indexOf("{"),end=text.lastIndexOf("}");
@@ -216,11 +289,25 @@ Deno.serve(async (req:Request)=>{
       status:"completed",result,completed_at:new Date().toISOString(),
     }).eq("id",jobId).eq("workspace_id",wid);
     return respond({jobId,status:"completed",result});
-  }catch(_error){
+  }catch(error){
+    const raw=error instanceof Error?error.message:"";
+    const valid=["provider_credentials_rejected","provider_model_or_request_invalid",
+      "provider_rate_limited","provider_upstream_error","provider_unavailable",
+      "provider_invalid_response","provider_incomplete_stream","invalid_provider_json",
+      "empty_caption"];
+    const code=error instanceof Error&&["AbortError","TimeoutError"].includes(error.name)?
+      "provider_timeout":valid.includes(raw)?raw:"provider_network_or_parse_error";
+    console.error("SHIFT Studio AI generation failed",{jobId,error:code});
     await admin.from("shift_generation_jobs").update({
-      status:"failed",error_code:"provider_unavailable",
-      completed_at:new Date().toISOString(),
+      status:"failed",error_code:code,completed_at:new Date().toISOString(),
     }).eq("id",jobId).eq("workspace_id",wid);
-    return respond({jobId,error:"provider_unavailable"},502);
+    return respond({jobId,error:code},code==="provider_timeout"?504:
+      code==="provider_rate_limited"?429:502);
   }finally{clearTimeout(deadline);}
+  };
+  if(payload.async===true){
+    EdgeRuntime.waitUntil(generate());
+    return respond({jobId,status:"running",pollAfterMs:4000},202);
+  }
+  return await generate();
 });
