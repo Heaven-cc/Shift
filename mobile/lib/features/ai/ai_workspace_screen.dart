@@ -164,9 +164,15 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     setState(()=>loading=true);
     try{
       final res=await Future.wait([
-        action('status'),action('history'),action('plan_items'),
-        nvidiaRequest('status'),nvidiaRequest('history'),
-        nemotronRequest('status'),
+        action('status'),
+        action('history').catchError((Object _) => <String,dynamic>{'history':[]}),
+        action('plan_items').catchError((Object _) => <String,dynamic>{'items':[]}),
+        nvidiaRequest('status').catchError((Object _) =>
+          <String,dynamic>{'availableTypes':[]}),
+        nvidiaRequest('history').catchError((Object _) =>
+          <String,dynamic>{'items':[]}),
+        nemotronRequest('status').catchError((Object _) =>
+          <String,dynamic>{'configured':false,'indexedCount':0}),
       ]);
       if(!mounted)return;
       setState((){
