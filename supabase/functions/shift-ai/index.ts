@@ -105,6 +105,13 @@ async function handler(req:Request){
    .eq("id",jobId).eq("workspace_id",a.wid).single();
   if(error||!job||!String(job.request_key??"").startsWith("shift-workspace-"))
     return reply({error:"job_not_found"},404);
+  // If a background isolate was terminated, avoid showing a stuck job forever.
+  if(job.status==="running"&&Date.now()-Date.parse(job.created_at)>180000){
+   await a.db.from("shift_generation_jobs")
+    .update({status:"failed",error_code:"provider_timeout",completed_at:new Date().toISOString()})
+    .eq("id",job.id).eq("workspace_id",a.wid).eq("status","running");
+   return reply({jobId:job.id,status:"failed",result:null,error:"provider_timeout"});
+  }
   return reply({jobId:job.id,status:job.status,result:job.result??null,
    error:job.status==="failed"?(job.error_code??"ai_failed"):null});
  }
@@ -126,6 +133,9 @@ async function handler(req:Request){
  if(job.status!=="pending")return reply({jobId,status:job.status,error:"not_retryable"},409);
  const {data:claimed}=await a.db.from("shift_generation_jobs").update({status:"running"}).eq("id",jobId).eq("workspace_id",a.wid).eq("status","pending").select("id");
  if(!claimed?.length)return reply({error:"claim_failed"},409);
+ // New Flutter versions opt in to background generation. Older installed APKs
+ // continue using the previous synchronous response contract.
+ const asyncRequested=body.async===true;
  // Return immediately to the mobile app. Keep generation alive in an
  // EdgeRuntime background task, and let clients query job_status.
  const execute=async()=>{
@@ -174,7 +184,17 @@ async function handler(req:Request){
   console.error("SHIFT AI generation failed",{jobId,error:safe,httpStatus:status});
  }
  };
- EdgeRuntime.waitUntil(execute());
- return reply({jobId,status:"running",pollAfterMs:3000},202);
+ if(asyncRequested){
+  EdgeRuntime.waitUntil(execute());
+  return reply({jobId,status:"running",pollAfterMs:3000},202);
+ }
+ // Compatibility: do not break already installed Flutter builds.
+ await execute();
+ const {data:finished}=await a.db.from("shift_generation_jobs")
+  .select("status,result,error_code").eq("id",jobId).eq("workspace_id",a.wid).single();
+ if(finished?.status==="completed")
+  return reply({jobId,status:"completed",result:finished.result});
+ const errorCode=finished?.error_code??"ai_failed";
+ return reply({jobId,error:errorCode},errorCode==="provider_timeout"?504:502);
 }
 Deno.serve(async(req)=>{try{return await handler(req)}catch(e){const s=e instanceof Error&&e.message==="unauthorized"?"unauthorized":"request_failed";console.error("SHIFT AI",s);return reply({error:s},s==="unauthorized"?401:403)}});
