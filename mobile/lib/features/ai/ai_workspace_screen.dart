@@ -23,12 +23,14 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   bool nemotronConfigured=false,semanticBusy=false;
   int knowledgeCount=0;
   List<Map<String,dynamic>> semanticMatches=[];
-  List<Map<String,dynamic>> nvidiaModels=[],mediaHistory=[];
-  String? selectedModel,selectedSourcePath;
+  List<Map<String,dynamic>> mediaHistory=[];
+  String mediaType='image';
+  String? selectedSourcePath;
+  Set<String> availableMediaTypes={};
   Map<String,dynamic>? generatedMedia;
   bool mediaBusy=false;
   bool loading=false,configured=false,research=false;
-  String mode='research',message='',provider='',progress='';
+  String mode='research',message='',progress='';
   Map<String,dynamic>? output;
   List<Map<String,dynamic>> plans=[],history=[];
   @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
@@ -41,25 +43,23 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       'Cannot connect to SHIFT Cloud. Check your Wi-Fi or mobile-data connection, '
       'then reopen AI History to retrieve the saved job. Do not repeat Run SHIFT AI.';
     if(raw.contains('provider_timeout'))return
-      'The NVIDIA model took too long to respond. Try a shorter request or retry. '
-      'Your API key and model selection have not been changed.';
+      'SHIFT AI took too long to respond. Your request was not completed. '
+      'Try a shorter prompt or check your saved history.';
     if(raw.contains('provider_credentials_rejected'))return
-      'NVIDIA rejected the API key or this model is not authorized for your account. '
-      'Check the key and model access in NVIDIA Build.';
+      'SHIFT AI credentials were rejected. The service configuration needs attention.';
     if(raw.contains('provider_model_or_request_invalid'))return
-      'NVIDIA rejected the model ID or request format. Check the exact model ID '
-      'shown on its NVIDIA Build API page.';
+      'SHIFT AI rejected the request format. Please retry with a simpler instruction.';
     if(raw.contains('provider_rate_limited'))return
-      'NVIDIA rate limit reached. Try again later or review your provider quota.';
+      'SHIFT AI is currently busy. Try again later.';
     if(raw.contains('provider_upstream_error')||raw.contains('provider_network_error'))return
-      'NVIDIA is temporarily unavailable or the connection failed. Try again.';
+      'SHIFT AI is temporarily unavailable. Please retry later.';
     if(raw.contains('provider_empty_response')||raw.contains('provider_invalid_response')
        ||raw.contains('invalid_model_output'))return
       'The AI response was incomplete. Try a simpler request, then retry.';
     if(raw.contains('research_provider_not_configured'))return
       'Online research needs SHIFT_BRAVE_SEARCH_API_KEY in SHIFT Supabase secrets.';
     if(raw.contains('ai_provider_not_configured'))return
-      'Set the NVIDIA API key and exact Mistral/Kimi model ID in SHIFT Supabase secrets.';
+      'SHIFT AI is not configured on the server.';
     if(raw.contains('generation_limit_reached'))return
       'SHIFT AI request limit reached. Try again later.';
     return 'SHIFT AI request failed. '+raw.replaceFirst('Bad state: ', '');
@@ -138,9 +138,8 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     }
   }
   Future<void> createMedia() async{
-    final matches=nvidiaModels.where((x)=>x['id']==selectedModel);
-    if(matches.isEmpty||mediaBusy)return;
-    final type=matches.first['type']?.toString()??'';
+    if(mediaBusy||!availableMediaTypes.contains(mediaType))return;
+    final type=mediaType;
     if(mediaPrompt.text.trim().length<5){
       toast(context,'Enter text or instructions first.');return;
     }
@@ -152,12 +151,12 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     setState((){mediaBusy=true;message='';generatedMedia=null;});
     try{
       final res=await nvidiaRequest(operation,{
-        'modelId':selectedModel,'prompt':mediaPrompt.text.trim(),
+        'prompt':mediaPrompt.text.trim(),
         if(type=='image_edit')'sourcePath':selectedSourcePath,
         if(type=='voice')'language':'en-US',
       });
       if(mounted)setState(()=>generatedMedia=res);
-    }catch(e){if(mounted)setState(()=>message='NVIDIA media: '+e.toString());}
+    }catch(e){if(mounted)setState(()=>message='SHIFT AI media: '+e.toString());}
     finally{if(mounted)setState(()=>mediaBusy=false);}
   }
   Future<void> refresh()async{
@@ -173,19 +172,17 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       setState((){
         configured=res[0]['configured']==true;
         research=res[0]['researchAvailable']==true;
-        provider=(res[0]['provider']??'Not configured').toString()+' • '+
-          (res[0]['model']??'').toString();
+
         history=(res[1]['history'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
         plans=(res[2]['items'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
         mediaHistory=(res[4]['items'] as List? ?? const [])
           .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        nvidiaModels=(res[3]['models'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        if(selectedModel==null||!nvidiaModels.any((m)=>m['id']==selectedModel)){
-          final media=nvidiaModels.where((m)=>m['type']!='text');
-          selectedModel=media.isEmpty?null:media.first['id']?.toString();
+        availableMediaTypes=(res[3]['availableTypes'] as List? ?? const [])
+          .map((x)=>x.toString()).toSet();
+        if(!availableMediaTypes.contains(mediaType)&&availableMediaTypes.isNotEmpty){
+          mediaType=availableMediaTypes.first;
         }
         nemotronConfigured=res[5]['configured']==true;
         knowledgeCount=(res[5]['indexedCount'] as num?)?.toInt()??0;
@@ -341,10 +338,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           FilledButton(onPressed:()=>context.push('/auth'),child:const Text('Sign in')),
         ]else ...[
           Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text(configured?'AI provider configured':'AI provider not configured',
+            Text(configured?'SHIFT AI connected':'SHIFT AI unavailable',
               style:Theme.of(context).textTheme.titleMedium),
             const SizedBox(height:6),
-            Text(configured?provider:'Add SHIFT_AI_PROVIDER, SHIFT_AI_MODEL and SHIFT_AI_API_KEY in Supabase Edge Function secrets.'),
+            Text(configured?'Text generation is configured. Requests are routed automatically.':'An administrator needs to configure a working AI connection.'),
             const SizedBox(height:6),
             Text(research?'Live research available':
               'For live research configure Brave Search or OpenAI native web search.',
@@ -385,33 +382,17 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
                 style:TextStyle(fontSize:12)),
             ])),
           ],
-          const Section('NVIDIA model library'),
-          const Text('Models use backend NVIDIA keys. Configured is not a successful live test.'),
-          if(nvidiaModels.isEmpty)
-            const Text('Model statuses unavailable. Refresh your account.'),
-          ...nvidiaModels.map((m)=>ListTile(
-            contentPadding:EdgeInsets.zero,
-            dense:true,
-            leading:Icon(m['configured']==true
-              ?Icons.check_circle_outline:Icons.lock_outline),
-            title:Text(m['label']?.toString()??'Model'),
-            subtitle:Text((m['type']??'').toString()+' • '+
-              (m['model']??'Set model ID in Supabase').toString()),
-            trailing:Text(m['configured']==true?'Configured':'Setup needed',
-              style:const TextStyle(fontSize:11)),
-          )),
-          const Section('Nemotron semantic research'),
+          const Section('SHIFT AI knowledge'),
           Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text('Nemotron 3.5 Embed 1B',
+            Text('SHIFT AI knowledge search',
               style:Theme.of(context).textTheme.titleMedium),
             const SizedBox(height:8),
             Text(nemotronConfigured
               ?'Ready for indexing • $knowledgeCount saved knowledge entries'
-              :'Configure SHIFT_NVIDIA_API_KEY or '
-                'SHIFT_NVIDIA_NEMOTRON_EMBED_API_KEY in SHIFT Supabase.'),
+              :'Knowledge search is not configured yet.'),
             const SizedBox(height:8),
             const Text('Find relevant saved research by meaning, not just keywords. '
-              'Embeddings do not write captions or replace Mistral.',
+              'Saved research helps SHIFT AI respond with relevant context.',
               style:TextStyle(fontSize:12)),
             const SizedBox(height:12),
             OutlinedButton.icon(
@@ -448,23 +429,23 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
               )),
             ],
           ])),
-          const Section('Generate media with NVIDIA'),
-          if(nvidiaModels.any((m)=>m['type']!='text'))...[
+          const Section('SHIFT AI media'),
+          if(availableMediaTypes.isNotEmpty)...[
             DropdownButtonFormField<String>(
-              value:selectedModel,
+              value:availableMediaTypes.contains(mediaType)?mediaType:null,
               isExpanded:true,
-              decoration:const InputDecoration(labelText:'Image, edit or voice model'),
-              items:nvidiaModels.where((m)=>m['type']!='text').map((m)=>
-                DropdownMenuItem<String>(
-                  value:m['id']?.toString(),
-                  child:Text(m['label']?.toString()??'Model',
-                    overflow:TextOverflow.ellipsis))).toList(),
-              onChanged:mediaBusy?null:(v)=>setState(()=>selectedModel=v),
+              decoration:const InputDecoration(labelText:'Create'),
+              items:const <String,String>{
+                'image':'Image','image_edit':'Edit image','voice':'Voice',
+              }.entries.where((entry)=>availableMediaTypes.contains(entry.key))
+                .map((entry)=>DropdownMenuItem<String>(
+                  value:entry.key,child:Text(entry.value))).toList(),
+              onChanged:mediaBusy?null:(v)=>setState(()=>mediaType=v??'image'),
             ),
             const SizedBox(height:12),
             TextField(controller:mediaPrompt,maxLines:3,
               decoration:const InputDecoration(labelText:'Creative instructions')),
-            if(nvidiaModels.any((m)=>m['id']==selectedModel&&m['type']=='image_edit'))...[
+            if(mediaType=='image_edit')...[
               const SizedBox(height:8),
               OutlinedButton.icon(onPressed:mediaBusy?null:selectPhoto,
                 icon:const Icon(Icons.image_outlined),
@@ -472,8 +453,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             ],
             const SizedBox(height:12),
             FilledButton.icon(
-              onPressed:mediaBusy||!nvidiaModels.any((m)=>
-                  m['id']==selectedModel&&m['configured']==true&&m['type']!='text')
+              onPressed:mediaBusy||!availableMediaTypes.contains(mediaType)
                 ?null:createMedia,
               icon:const Icon(Icons.auto_awesome),
               label:Text(mediaBusy?'Generating…':'Generate media')),
@@ -495,14 +475,14 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             ],
           ],
           const Section('Generated media history'),
-          const Text('Recent generated images and voice files are stored in your private SHIFT cloud workspace.'),
+          const Text('Generated images and voice files are stored in your private SHIFT cloud workspace.'),
           if(mediaHistory.isEmpty)
-            const Text('No NVIDIA media created yet.'),
+            const Text('No SHIFT AI media created yet.'),
           ...mediaHistory.take(12).map((m)=>ListTile(
             contentPadding:EdgeInsets.zero,
             leading:Icon(m['type']=='voice'
               ?Icons.record_voice_over_outlined:Icons.image_outlined),
-            title:Text((m['modelId']??'NVIDIA model').toString()),
+            title:Text(m['type']=='voice'?'SHIFT AI voice':'SHIFT AI image'),
             subtitle:Text((m['prompt']??'').toString(),
               maxLines:2,overflow:TextOverflow.ellipsis),
             trailing:const Icon(Icons.open_in_new,size:18),
