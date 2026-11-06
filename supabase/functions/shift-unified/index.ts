@@ -113,6 +113,25 @@ async function handle(req:Request){
   const out=await delegate("shift-ai",user.token,fields);
   return reply(out.data,out.status);
  }
+ if(action==="studio_status"){
+  const out=await delegate("shift-generate-text",user.token,{
+   action:"job_status",jobId:clean(body.jobId,60)
+  });
+  return reply(out.data,out.status);
+ }
+ if(action==="studio"){
+  if(!caps.text)return reply({error:"text_not_configured"},503);
+  // The studio output schema includes caption/headline/hashtags.
+  // Always route through SHIFT's backend, never a client-selected model.
+  const allowed=["prompt","requestKey","goal","tone","platform","language",
+   "audience","length","mode","sourceText"];
+  const payload:Record<string,unknown>={async:true};
+  for(const key of allowed){
+   if(typeof body[key]==="string")payload[key]=clean(body[key],key==="prompt"?4000:4000);
+  }
+  const out=await delegate("shift-generate-text",user.token,payload);
+  return reply(out.data,out.status);
+ }
  if(action==="media_history"){
   const out=await delegate("shift-nvidia",user.token,{action:"history"});
   return reply(out.data,out.status);
