@@ -156,7 +156,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       tags.text = result['hashtags']?.toString() ?? '';
       if (mounted) toast(context, 'AI draft generated. Review it before saving or approving.');
     } catch (e) {
-      if (mounted) toast(context, 'Could not generate content: $e');
+      if (mounted) showShiftError(context, e, title:'Unable to generate content');
     } finally {
       if (mounted) setState(() => generating = false);
     }
@@ -301,7 +301,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       }
       toast(context, 'Suggestion applied locally. Save and review the new revision.');
     } catch (e) {
-      if (mounted) toast(context, 'AI tool could not complete: $e');
+      if (mounted) showShiftError(context, e, title:'SHIFT AI is unavailable');
     } finally {
       if (mounted) setState(() => generating = false);
     }
@@ -340,7 +340,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     final brandName = ref.watch(workspaceProvider).brand['name'] ?? 'Your brand';
     return PageBody(children: [
       Heading(widget.postId == null ? 'What should SHIFT\ncreate today?' : 'Make it sound like you.', 'Write an original post, refine it, and keep every version.'),
-      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud workspace • Drafts and images sync to Supabase. AI output is always a reviewable draft.' : 'Offline workspace • Sign in to save online and use AI.'),
+      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud workspace • Drafts and images sync securely with SHIFT. AI output is always a reviewable draft.' : 'Offline workspace • Sign in to save online and use AI.'),
       if (widget.postId == null) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async {
         if (caption.text.trim().isNotEmpty) await save(quiet: true);
         if (!mounted) return;
@@ -357,7 +357,8 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
             icon: const Icon(Icons.auto_awesome),
             label: Text(generating ? 'Generating…' : 'Generate with SHIFT')),
         ])),
-        const Section('Creative direction'),
+        if(generating)...[const SizedBox(height:16),const ShiftSkeleton(rows:5)],
+         const Section('Creative direction'),
         option('Destination preview', platform, [if (!ShiftSocialPlatforms.names.contains(platform)) platform, ...ShiftSocialPlatforms.names], (v) => setState(() => platform = v)),
         option('Content goal', goal, ['Educate', 'Inform', 'Entertain', 'Promote', 'Build awareness', 'Encourage engagement'], (v) => setState(() => goal = v)),
         option('Tone', tone, ['Conversational', 'Professional', 'Inspirational', 'Playful', 'Direct'], (v) => setState(() => tone = v)),
