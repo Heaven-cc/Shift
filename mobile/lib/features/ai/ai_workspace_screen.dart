@@ -183,7 +183,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       }else{
         throw StateError('The AI server did not accept the request.');
       }
-    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
+    }catch(e){if(mounted)setState((){
+      progress='';
+      message=displayAiError(e);
+    });}
     finally{if(mounted)setState(()=>loading=false);}
   }
   Future<void> resumeJob(Map<String,dynamic> job)async{
@@ -202,7 +205,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       }else if(current['status']=='running'||current['status']=='pending'){
         await waitForJob(id);
       }
-    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
+    }catch(e){if(mounted)setState((){
+      progress='';
+      message=displayAiError(e);
+    });}
     finally{if(mounted)setState(()=>loading=false);}
   }
   Future<void> accept(Map<String,dynamic> p)async{
