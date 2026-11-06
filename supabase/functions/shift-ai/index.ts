@@ -45,7 +45,7 @@ async function search(q:string,key:string){
  for(const x of data.web?.results||[]){try{const u=new URL(x.url);if(u.protocol!=="https:"||u.username||u.password||out.some(y=>y.url===u.toString()))continue;out.push({url:u.toString(),title:clean(x.title,200),summary:clean(x.description,500),publisher:u.hostname})}catch{}if(out.length>=8)break}
  return out;
 }
-async function readNvidiaSse(response:Response,deadline:AbortController){
+async function readNvidiaSse(response:Response){
  if(!response.body)throw Error("provider_invalid_response");
  const reader=response.body.getReader(),decoder=new TextDecoder();
  let buffer="",text="",frames=0,first=false,finished=false;
@@ -55,6 +55,7 @@ async function readNvidiaSse(response:Response,deadline:AbortController){
    if(done)break;
    if(!value)continue;
    buffer+=decoder.decode(value,{stream:true});
+   buffer=buffer.replace(/\r\n/g,"\n");
    if(buffer.length>128000)throw Error("provider_invalid_response");
    // SSE fields may span TCP chunks and use CRLF.
    let marker=buffer.indexOf("\n\n");
@@ -130,7 +131,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   if(useStream){
    const contentType=response.headers.get("content-type")??"";
    if(!contentType.includes("text/event-stream"))throw Error("provider_invalid_response");
-   content=await readNvidiaSse(response,controller);
+   content=await readNvidiaSse(response);
   }else{
    let d:any;try{d=await response.json()}catch{throw Error("provider_invalid_response")}
    const raw=d.choices?.[0]?.message?.content;
