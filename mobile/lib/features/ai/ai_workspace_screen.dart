@@ -19,6 +19,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     'improve':'Improve content'};
   final prompt=TextEditingController();
   final mediaPrompt=TextEditingController();
+  final semanticQuery=TextEditingController();
+  bool nemotronConfigured=false,semanticBusy=false;
+  int knowledgeCount=0;
+  List<Map<String,dynamic>> semanticMatches=[];
   List<Map<String,dynamic>> nvidiaModels=[],mediaHistory=[];
   String? selectedModel,selectedSourcePath;
   Map<String,dynamic>? generatedMedia;
@@ -28,7 +32,9 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   Map<String,dynamic>? output;
   List<Map<String,dynamic>> plans=[],history=[];
   @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
-  @override void dispose(){prompt.dispose();mediaPrompt.dispose();super.dispose();}
+  @override void dispose(){
+    prompt.dispose();mediaPrompt.dispose();semanticQuery.dispose();super.dispose();
+  }
   String displayAiError(Object error){
     final raw=error.toString();
     if(isTransientConnectionError(error))return
@@ -65,6 +71,49 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     final data=Map<String,dynamic>.from(r.data as Map);
     if(data['error']!=null)throw StateError(data['error'].toString());
     return data;
+  }
+  Future<Map<String,dynamic>> nemotronRequest(String operation,
+      [Map<String,dynamic> payload=const {}]) async {
+    final response=await ShiftCloud.client.functions.invoke('shift-nemotron',
+      body:<String,dynamic>{'action':operation,...payload});
+    if(response.data is! Map)throw StateError('Unexpected semantic-search response');
+    final data=Map<String,dynamic>.from(response.data as Map);
+    if(data['error']!=null)throw StateError(data['error'].toString());
+    return data;
+  }
+  Future<void> indexKnowledge() async {
+    if(semanticBusy)return;
+    setState((){semanticBusy=true;message='';});
+    try{
+      final outcome=await nemotronRequest('index');
+      await loadNemotronStatus();
+      if(mounted)toast(context,
+        'Indexed ${outcome['indexed']??0} sources. '
+        '${outcome['remaining']??0} remaining.');
+    }catch(e){
+      if(mounted)setState(()=>message='Semantic index: '+e.toString());
+    }finally{if(mounted)setState(()=>semanticBusy=false);}
+  }
+  Future<void> loadNemotronStatus()async{
+    final data=await nemotronRequest('status');
+    if(!mounted)return;
+    setState((){
+      nemotronConfigured=data['configured']==true;
+      knowledgeCount=(data['indexedCount'] as num?)?.toInt()??0;
+    });
+  }
+  Future<void> searchKnowledge() async {
+    if(semanticBusy)return;
+    final question=semanticQuery.text.trim();
+    if(question.length<3){toast(context,'Enter a search topic.');return;}
+    setState((){semanticBusy=true;message='';});
+    try{
+      final data=await nemotronRequest('search',{'query':question});
+      if(mounted)setState(()=>semanticMatches=(data['matches'] as List? ?? const [])
+        .map((x)=>Map<String,dynamic>.from(x as Map)).toList());
+    }catch(e){
+      if(mounted)setState(()=>message='Semantic search: '+e.toString());
+    }finally{if(mounted)setState(()=>semanticBusy=false);}
   }
   Future<Map<String,dynamic>> nvidiaRequest(String operation,
       [Map<String,dynamic> payload=const {}]) async {
@@ -118,6 +167,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       final res=await Future.wait([
         action('status'),action('history'),action('plan_items'),
         nvidiaRequest('status'),nvidiaRequest('history'),
+        nemotronRequest('status'),
       ]);
       if(!mounted)return;
       setState((){
@@ -137,6 +187,8 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           final media=nvidiaModels.where((m)=>m['type']!='text');
           selectedModel=media.isEmpty?null:media.first['id']?.toString();
         }
+        nemotronConfigured=res[5]['configured']==true;
+        knowledgeCount=(res[5]['indexedCount'] as num?)?.toInt()??0;
         message='';
       });
     }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
@@ -348,6 +400,54 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             trailing:Text(m['configured']==true?'Configured':'Setup needed',
               style:const TextStyle(fontSize:11)),
           )),
+          const Section('Nemotron semantic research'),
+          Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text('Nemotron 3.5 Embed 1B',
+              style:Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height:8),
+            Text(nemotronConfigured
+              ?'Ready for indexing • $knowledgeCount saved knowledge entries'
+              :'Configure SHIFT_NVIDIA_API_KEY or '
+                'SHIFT_NVIDIA_NEMOTRON_EMBED_API_KEY in SHIFT Supabase.'),
+            const SizedBox(height:8),
+            const Text('Find relevant saved research by meaning, not just keywords. '
+              'Embeddings do not write captions or replace Mistral.',
+              style:TextStyle(fontSize:12)),
+            const SizedBox(height:12),
+            OutlinedButton.icon(
+              onPressed:semanticBusy||!nemotronConfigured?null:indexKnowledge,
+              icon:const Icon(Icons.library_add_outlined),
+              label:const Text('Index saved research')),
+            const SizedBox(height:12),
+            TextField(controller:semanticQuery,
+              decoration:const InputDecoration(
+                labelText:'Search your research',
+                hintText:'What marketing trends match my audience?')),
+            const SizedBox(height:8),
+            FilledButton.icon(
+              onPressed:semanticBusy||!nemotronConfigured?null:searchKnowledge,
+              icon:const Icon(Icons.manage_search),
+              label:const Text('Semantic search')),
+            if(semanticBusy)const LinearProgressIndicator(),
+            if(semanticMatches.isNotEmpty)...[
+              const SizedBox(height:12),
+              Text('Relevant saved sources',
+                style:Theme.of(context).textTheme.titleSmall),
+              ...semanticMatches.map((item)=>ListTile(
+                contentPadding:EdgeInsets.zero,
+                title:Text(item['title']?.toString()??'Saved research'),
+                subtitle:Text(item['snippet']?.toString()??'',
+                  maxLines:3,overflow:TextOverflow.ellipsis),
+                trailing:const Icon(Icons.open_in_new,size:18),
+                onTap:(){
+                  final link=Uri.tryParse(item['url']?.toString()??'');
+                  if(link!=null&&link.scheme=='https'){
+                    launchUrl(link,mode:LaunchMode.externalApplication);
+                  }
+                },
+              )),
+            ],
+          ])),
           const Section('Generate media with NVIDIA'),
           if(nvidiaModels.any((m)=>m['type']!='text'))...[
             DropdownButtonFormField<String>(
