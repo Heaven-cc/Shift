@@ -20,38 +20,14 @@ Deno.serve(async (req:Request)=>{
   const url=Deno.env.get("SUPABASE_URL");
   const anonKey=Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  // All new SHIFT AI calls share a backend-only, explicitly selected provider.
-  // Do not infer a default from the older Groq integration.
-  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
-  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
-  const roles=selected==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
-  const aiCandidates=provider==="nvidia"?
-    roles.map(role=>({
-      key:Deno.env.get("SHIFT_NVIDIA_"+role+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY")||"",
-      model:Deno.env.get("SHIFT_NVIDIA_"+role+"_MODEL")||"",
-    })).filter(candidate=>candidate.key&&candidate.model):
-    [{key:Deno.env.get("SHIFT_AI_API_KEY")||"",model:Deno.env.get("SHIFT_AI_MODEL")||""}];
-  const endpoints:Record<string,string>={
-    openai:"https://api.openai.com/v1/chat/completions",
-    gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    groq:"https://api.groq.com/openai/v1/chat/completions",
-    nvidia:"https://integrate.api.nvidia.com/v1/chat/completions",
-  };
-  let endpoint=endpoints[provider]??"";
-  if(provider==="openai-compatible"){
-    try{
-      const chosen=new URL(Deno.env.get("SHIFT_AI_BASE_URL")??"");
-      if(chosen.protocol==="https:"&&!chosen.username&&!chosen.password&&!chosen.hash&&
-        !/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(chosen.hostname)&&
-        !/^\d+\.\d+\.\d+\.\d+$/.test(chosen.hostname)){
-        endpoint=chosen.toString();
-      }
-    }catch{/* Invalid custom endpoint */}
-  }
+  // Angel-style direct call: public model/endpoint fixed on the server,
+  // with a protected API credential kept in SHIFT secrets.
+  const MISTRAL_ENDPOINT="https://integrate.api.nvidia.com/v1/chat/completions";
+  const MISTRAL_MODEL="mistralai/mistral-large-4-1t-a52b";
+  const mistralKey=Deno.env.get("SHIFT_NVIDIA_MISTRAL_API_KEY")||
+    Deno.env.get("SHIFT_NVIDIA_API_KEY")||"";
   if(!url||!anonKey||!serviceRole)return respond({error:"backend_not_configured"},503);
-  // No AI requests or usage are recorded until the provider is configured.
-  if(!aiCandidates.length||!aiCandidates[0].key||!aiCandidates[0].model||!endpoint)
-    return respond({error:"ai_provider_not_configured"},503);
+  if(!mistralKey)return respond({error:"ai_provider_not_configured"},503);
   const authorization=req.headers.get("authorization")??"";
   const token=authorization.replace(/^Bearer\s+/i,"");
   if(!token)return respond({error:"sign_in_required"},401);
@@ -188,29 +164,15 @@ Deno.serve(async (req:Request)=>{
       ideas:"Provide 5 original, specific post ideas in ideas; write a short helpful caption summarizing why they fit the brand.",
       strategy:"Offer a practical, brand-aware editorial strategy with positioning, 3-5 content pillars, a manageable weekly cadence and 2 concrete experiments. Never claim analytics are available when they are not."
     };
-    let text="";
-    let attemptedError:unknown;
-    for(let index=0;index<aiCandidates.length;index++){
-     const candidate=aiCandidates[index];
-     const remaining=Math.max(0,generationDeadline-Date.now()-1500);
-     const attemptMs=Math.floor(remaining/(aiCandidates.length-index));
-     if(attemptMs<1000)throw attemptedError??Error('provider_timeout');
-     const modelRole=candidate.model===(Deno.env.get("SHIFT_NVIDIA_GLM_MODEL")||"")?"glm":
-       candidate.model===(Deno.env.get("SHIFT_NVIDIA_MISTRAL_MODEL")||"")?"mistral":"other";
-     console.info("SHIFT Studio model attempt started",{modelRole});
-     try{
-     const providerKey=candidate.key,providerModel=candidate.model;
-     const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
-      const isGlm53=provider==="nvidia"&&providerModel==="z-ai/glm-5.3";
-     const response=await fetch(endpoint,{
-      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(attemptMs)]),
-      headers:{"authorization":`Bearer ${providerKey}`,
-        "content-type":"application/json",
-        "accept":(isMistral4||isGlm53)?"text/event-stream":"application/json"},
+    console.info("SHIFT Studio Mistral request started");
+    const started=Date.now();
+    const response=await fetch(MISTRAL_ENDPOINT,{
+      method:"POST",signal:controller.signal,
+      headers:{"authorization":"Bearer "+mistralKey,
+        "content-type":"application/json","accept":"application/json"},
       body:JSON.stringify({
-        model:providerModel,stream:isMistral4||isGlm53,
-        ...(provider==="openai"?{max_completion_tokens:1100}:{max_tokens:1100}),
-        ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
+        model:MISTRAL_MODEL,stream:false,max_tokens:4096,
+        reasoning_effort:"none",
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+
@@ -221,63 +183,34 @@ Deno.serve(async (req:Request)=>{
         ],
       }),
     });
+    console.info("SHIFT Studio Mistral HTTP result",{
+      status:response.status,elapsedMs:Date.now()-started
+    });
     if(!response.ok){
-      console.warn("SHIFT Studio upstream rejected request",{modelRole,status:response.status});
       if([401,403].includes(response.status))throw Error("provider_credentials_rejected");
+      if(response.status===402)throw Error("provider_quota_exhausted");
       if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
       if(response.status===429)throw Error("provider_rate_limited");
       if(response.status>=500)throw Error("provider_upstream_error");
       throw Error("provider_unavailable");
     }
-    text="";
-    if(isMistral4||isGlm53){
-      if(!response.body)throw Error("provider_invalid_response");
-      const reader=response.body.getReader(),decoder=new TextDecoder();
-      let buffer="",doneMarker=false;
-      try{
-        while(!doneMarker){
-          const next=await reader.read();
-          if(next.done)break;
-          buffer+=decoder.decode(next.value,{stream:true}).replace(/\r\n/g,"\n");
-          if(buffer.length>128000)throw Error("provider_invalid_response");
-          let end=buffer.indexOf("\n\n");
-          while(end>=0){
-            const frame=buffer.slice(0,end);buffer=buffer.slice(end+2);
-            for(const ln of frame.split("\n")){
-              if(!ln.startsWith("data:"))continue;
-              const chunk=ln.slice(5).trim();
-              if(chunk==="[DONE]"){doneMarker=true;break;}
-              if(!chunk)continue;
-              let item:any;
-              try{item=JSON.parse(chunk)}catch{throw Error("provider_invalid_response")}
-              if(item.error)throw Error("provider_upstream_error");
-              const delta=item.choices?.[0]?.delta?.content;
-              if(typeof delta==="string")text+=delta;
-              if(text.length>20000)throw Error("provider_invalid_response");
-            }
-            if(doneMarker)break;
-            end=buffer.indexOf("\n\n");
-          }
-        }
-      }finally{if(doneMarker){try{await reader.cancel()}catch{/* best effort */}}}
-      if(!doneMarker)throw Error("provider_incomplete_stream");
-    }else{
-      const parsed=await response.json();
-      const content=parsed?.choices?.[0]?.message?.content;
-      if(typeof content!=="string")throw Error("provider_invalid_response");
-      text=content;
+    let completion:any;
+    try{completion=await response.json()}catch{throw Error("provider_invalid_response")}
+    const message=completion?.choices?.[0]?.message;
+    const value=message?.content;
+    const text=typeof value==="string"?value:Array.isArray(value)?
+      value.map((x:any)=>typeof x?.text==="string"?x.text:"").join("\n"):"";
+    if(!text.trim()){
+      console.warn("SHIFT Studio Mistral empty visible content",{
+        hasReasoning:!!message?.reasoning_content,
+        finishReason:completion?.choices?.[0]?.finish_reason??"unknown"
+      });
+      throw Error("provider_empty_response");
     }
-    if(!text||text.length>20000)throw Error("provider_invalid_response");
-    break;
-     }catch(error){
-      attemptedError=error;
-      const code=error instanceof Error?error.message:"ai_failed";
-      console.warn("SHIFT Studio model attempt failed",{modelRole,errorCode:code.startsWith("provider_")?code:"ai_failed"});
-      if(candidate===aiCandidates[aiCandidates.length-1])throw error;
-      console.warn("SHIFT AI switching to another configured text backend");
-     }
-    }
-    if(!text)throw attemptedError??Error("provider_unavailable");
+    if(text.length>30000)throw Error("provider_invalid_response");
+    console.info("SHIFT Studio Mistral response completed",{
+      elapsedMs:Date.now()-started
+    });
     let obj:Record<string,unknown>;
     try {obj=JSON.parse(text);}catch{
       const start=text.indexOf("{"),end=text.lastIndexOf("}");
@@ -318,7 +251,7 @@ Deno.serve(async (req:Request)=>{
     const valid=["provider_credentials_rejected","provider_model_or_request_invalid",
       "provider_rate_limited","provider_upstream_error","provider_unavailable",
       "provider_invalid_response","provider_incomplete_stream","invalid_provider_json",
-      "empty_caption"];
+      "empty_caption","provider_quota_exhausted","provider_empty_response"];
     const code=error instanceof Error&&["AbortError","TimeoutError"].includes(error.name)?
       "provider_timeout":raw==="provider_timeout"?"provider_timeout":valid.includes(raw)?raw:"provider_network_or_parse_error";
     console.error("SHIFT Studio AI generation failed",{jobId,error:code});
