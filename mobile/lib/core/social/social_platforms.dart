@@ -23,8 +23,8 @@ class ShiftSocialPlatform {
   String get integrationLabel => id == 'bluesky'
       ? 'SHIFT direct connection available • see account panel'
       : directSdk
-          ? 'Social SDK adapter available • OAuth not configured'
-          : 'Requires separate provider integration';
+          ? 'Account connection requires setup'
+          : 'Connection not available yet';
 }
 
 class ShiftSocialPlatforms {
@@ -37,15 +37,15 @@ class ShiftSocialPlatforms {
       publishingNote: 'Requires an eligible professional account, approved permissions and compatible media.',
       developerUrl: 'https://developers.facebook.com/docs/instagram-platform/',
       homeUrl: 'https://www.instagram.com/',
-      connectionNote: 'Configure Meta app, Instagram permissions and server-side OAuth.',
+      connectionNote: 'Instagram connection is not ready yet. You can create and export drafts now.',
     ),
     ShiftSocialPlatform(
       id: 'facebook', name: 'Facebook',
       accountRequirement: 'Facebook Page with publishing permissions',
-      publishingNote: 'Page publishing requires a Page grant. Social SDK 0.5.0 has no direct Facebook adapter.',
+      publishingNote: 'Facebook Page publishing requires an approved connected account.',
       developerUrl: 'https://developers.facebook.com/docs/pages-api/',
       homeUrl: 'https://www.facebook.com/',
-      connectionNote: 'Requires a separate Meta Pages API or supported managed provider.',
+      connectionNote: 'Facebook Page connection is not ready yet. You can prepare and export posts.',
       directSdk: false,
     ),
     ShiftSocialPlatform(
@@ -54,7 +54,7 @@ class ShiftSocialPlatforms {
       publishingNote: 'Direct video publishing requires TikTok authorization, review and supported video formats.',
       developerUrl: 'https://developers.tiktok.com/',
       homeUrl: 'https://www.tiktok.com/',
-      connectionNote: 'Configure TikTok developer app, approved scopes and server-side tokens.',
+      connectionNote: 'TikTok publishing needs account authorization before it can be enabled.',
     ),
     ShiftSocialPlatform(
       id: 'linkedin', name: 'LinkedIn',
@@ -62,7 +62,7 @@ class ShiftSocialPlatforms {
       publishingNote: 'Posting permissions and member/organization eligibility depend on LinkedIn API grants.',
       developerUrl: 'https://www.linkedin.com/developers/',
       homeUrl: 'https://www.linkedin.com/',
-      connectionNote: 'Configure LinkedIn developer app, requested scopes and OAuth.',
+      connectionNote: 'LinkedIn connection requires supported account authorization.',
     ),
     ShiftSocialPlatform(
       id: 'x', name: 'X',
@@ -70,7 +70,7 @@ class ShiftSocialPlatforms {
       publishingNote: 'Publishing requires X API access and permission to write posts.',
       developerUrl: 'https://developer.x.com/',
       homeUrl: 'https://x.com/',
-      connectionNote: 'Configure X API tier, OAuth credentials and server-side access tokens.',
+      connectionNote: 'X publishing requires a connected account with posting permission.',
     ),
     ShiftSocialPlatform(
       id: 'threads', name: 'Threads',
@@ -78,7 +78,7 @@ class ShiftSocialPlatforms {
       publishingNote: 'Posting requires Meta Threads permissions and a valid user grant.',
       developerUrl: 'https://developers.facebook.com/docs/threads/',
       homeUrl: 'https://www.threads.net/',
-      connectionNote: 'Configure a Meta app for Threads and complete OAuth.',
+      connectionNote: 'Threads connection requires account authorization before posting.',
     ),
     ShiftSocialPlatform(
       id: 'youtube', name: 'YouTube',
@@ -86,7 +86,7 @@ class ShiftSocialPlatforms {
       publishingNote: 'YouTube publishing centers on video uploads and appropriate Google OAuth scopes.',
       developerUrl: 'https://developers.google.com/youtube/v3',
       homeUrl: 'https://www.youtube.com/',
-      connectionNote: 'Configure Google Cloud OAuth consent and YouTube upload permissions.',
+      connectionNote: 'YouTube publishing requires an authorized channel and video permissions.',
     ),
     ShiftSocialPlatform(
       id: 'bluesky', name: 'Bluesky',
@@ -99,10 +99,10 @@ class ShiftSocialPlatforms {
     ShiftSocialPlatform(
       id: 'pinterest', name: 'Pinterest',
       accountRequirement: 'Pinterest account with approved API access',
-      publishingNote: 'Preview and manual export only. Social SDK 0.5.0 has no direct Pinterest adapter.',
+      publishingNote: 'Preview and manual export are available. Direct Pinterest publishing is not connected yet.',
       developerUrl: 'https://developers.pinterest.com/',
       homeUrl: 'https://www.pinterest.com/',
-      connectionNote: 'Requires a separate Pinterest integration before SHIFT can connect or publish.',
+      connectionNote: 'Pinterest connection is not available yet. Drafts can still be exported manually.',
       directSdk: false,
     ),
   ];
