@@ -79,6 +79,53 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
         : workspace.cloudError ?? 'Save failed. Retry saving.');
     }
   }
+  /// Submits a single generation job and watches its status. An interrupted
+  /// status request never starts a second, chargeable NVIDIA inference.
+  Future<Map<String,dynamic>> generateWithCloudJob(Map<String,dynamic> body) async {
+    final response=await ShiftCloud.client.functions.invoke(
+      'shift-generate-text',body:<String,dynamic>{...body,'async':true});
+    if(response.data is! Map)throw StateError('Invalid AI response.');
+    final initial=Map<String,dynamic>.from(response.data as Map);
+    if(initial['error']!=null)throw StateError('AI request: ${initial['error']}');
+    if(initial['status']=='completed'&&initial['result'] is Map){
+      return Map<String,dynamic>.from(initial['result'] as Map);
+    }
+    final id=initial['jobId']?.toString()??'';
+    if(id.isEmpty||initial['status']!='running'){
+      throw StateError('The AI job was not accepted.');
+    }
+    var networkFailures=0;
+    for(var attempt=0;attempt<32;attempt++){
+      await Future<void>.delayed(const Duration(seconds:4));
+      final check=await (() async {
+        try{
+          final poll=await ShiftCloud.client.functions.invoke(
+            'shift-generate-text',body:{'action':'job_status','jobId':id});
+          networkFailures=0;
+          return poll;
+        }catch(e){
+          if(e.toString().contains('SocketException')||
+            e.toString().contains('Failed host lookup')||
+            e.toString().contains('FunctionsFetchException')){
+            networkFailures++;
+            if(networkFailures<5)return null;
+          }
+          rethrow;
+        }
+      })();
+      if(check==null)continue;
+      if(check.data is! Map)throw StateError('Invalid AI job status.');
+      final status=Map<String,dynamic>.from(check.data as Map);
+      if(status['status']=='completed'){
+        if(status['result'] is! Map)throw StateError('AI returned no draft.');
+        return Map<String,dynamic>.from(status['result'] as Map);
+      }
+      if(status['status']=='failed'){
+        throw StateError('Generation failed: ${status['error']??'provider_failed'}');
+      }
+    }
+    throw StateError('Still processing. Check the saved generation job rather than resubmitting.');
+  }
   Future<void> generateText() async {
     if (generating) return;
     if (!workspace.cloudAuthenticated) {
@@ -92,8 +139,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     }
     if (mounted) setState(() => generating = true);
     try {
-      final response = await ShiftCloud.client.functions.invoke(
-        'shift-generate-text', body: {
+      final result = await generateWithCloudJob({
           'prompt': prompt,
           'requestKey': 'shift-${DateTime.now().microsecondsSinceEpoch}',
           'goal': goal,
@@ -103,18 +149,6 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           'audience': audience.text.trim(),
           'length': length,
         });
-      if (response.data is! Map) throw StateError('Unexpected AI response.');
-      final data = Map<String, dynamic>.from(response.data as Map);
-      if (data['error'] != null) {
-        if (data['error'] == 'ai_provider_not_configured') {
-          throw StateError('Configure the chosen SHIFT AI provider, API key and model in SHIFT Supabase Edge Function secrets.');
-        }
-        throw StateError('AI request unavailable: ${data['error']}');
-      }
-      if (data['status'] != 'completed' || data['result'] is! Map) {
-        throw StateError('AI generation has not completed. No draft was replaced.');
-      }
-      final result = Map<String, dynamic>.from(data['result'] as Map);
       final generatedCaption = result['caption']?.toString().trim() ?? '';
       if (generatedCaption.isEmpty) throw StateError('The AI returned no usable caption.');
       caption.text = generatedCaption;
@@ -153,9 +187,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     };
     setState(() => generating = true);
     try {
-      final response = await ShiftCloud.client.functions.invoke(
-        'shift-generate-text',
-        body: <String,dynamic>{
+      final result = await generateWithCloudJob(<String,dynamic>{
           'prompt': [tasks[mode] ?? 'Improve my content.',
             if (instruction.text.trim().isNotEmpty) instruction.text.trim()]
               .join(' '),
@@ -168,20 +200,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
           'language':language,
           'audience':audience.text.trim(),
           'length':length,
-        },
-      );
-      if (response.data is! Map) throw StateError('Invalid AI response.');
-      final data = Map<String,dynamic>.from(response.data as Map);
-      if (data['error'] != null) {
-        final code = data['error'].toString();
-        throw StateError(code == 'ai_provider_not_configured'
-          ? 'Groq API key and model must be configured in SHIFT Supabase.'
-          : 'AI operation unavailable: $code');
-      }
-      if (data['status'] != 'completed' || data['result'] is! Map) {
-        throw StateError('The AI request has not completed. Try again later.');
-      }
-      final result = Map<String,dynamic>.from(data['result'] as Map);
+        });
       if (!mounted) return;
       if (mode == 'ideas') {
         final ideas = (result['ideas'] as List? ?? const [])
