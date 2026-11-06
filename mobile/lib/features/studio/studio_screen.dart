@@ -83,7 +83,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
   /// status request never starts a second, chargeable NVIDIA inference.
   Future<Map<String,dynamic>> generateWithCloudJob(Map<String,dynamic> body) async {
     final response=await ShiftCloud.client.functions.invoke(
-      'shift-generate-text',body:<String,dynamic>{...body,'async':true});
+      'shift-unified',body:<String,dynamic>{...body,'action':'studio'});
     if(response.data is! Map)throw StateError('Invalid AI response.');
     final initial=Map<String,dynamic>.from(response.data as Map);
     if(initial['error']!=null)throw StateError('AI request: ${initial['error']}');
@@ -100,7 +100,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       final check=await (() async {
         try{
           final poll=await ShiftCloud.client.functions.invoke(
-            'shift-generate-text',body:{'action':'job_status','jobId':id});
+            'shift-unified',body:{'action':'studio_status','jobId':id});
           networkFailures=0;
           return poll;
         }catch(e){
