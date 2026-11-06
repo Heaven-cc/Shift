@@ -57,12 +57,12 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
        ||raw.contains('invalid_model_output'))return
       'The AI response was incomplete. Try a simpler request, then retry.';
     if(raw.contains('research_provider_not_configured'))return
-      'Online research needs SHIFT_BRAVE_SEARCH_API_KEY in SHIFT Supabase secrets.';
+      'Online research needs online research access in SHIFT the service settings.';
     if(raw.contains('ai_provider_not_configured'))return
       'SHIFT AI is not configured on the server.';
     if(raw.contains('generation_limit_reached'))return
       'SHIFT AI request limit reached. Try again later.';
-    return 'SHIFT AI request failed. '+raw.replaceFirst('Bad state: ', '');
+    return shiftFriendlyError(error);
   }
   Future<Map<String,dynamic>> action(String operation,[Map<String,dynamic> extra=const {}])async{
     final r=await ShiftCloud.client.functions.invoke('shift-ai',
@@ -91,7 +91,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
         'Indexed ${outcome['indexed']??0} sources. '
         '${outcome['remaining']??0} remaining.');
     }catch(e){
-      if(mounted)setState(()=>message='Semantic index: '+e.toString());
+      if(mounted)setState(()=>message=shiftFriendlyError(e));
     }finally{if(mounted)setState(()=>semanticBusy=false);}
   }
   Future<void> loadNemotronStatus()async{
@@ -112,14 +112,14 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       if(mounted)setState(()=>semanticMatches=(data['matches'] as List? ?? const [])
         .map((x)=>Map<String,dynamic>.from(x as Map)).toList());
     }catch(e){
-      if(mounted)setState(()=>message='Semantic search: '+e.toString());
+      if(mounted)setState(()=>message=shiftFriendlyError(e));
     }finally{if(mounted)setState(()=>semanticBusy=false);}
   }
   Future<Map<String,dynamic>> nvidiaRequest(String operation,
       [Map<String,dynamic> payload=const {}]) async {
     final response=await ShiftCloud.client.functions.invoke('shift-nvidia',
       body:<String,dynamic>{'action':operation,...payload});
-    if(response.data is! Map)throw StateError('Invalid NVIDIA response');
+    if(response.data is! Map)throw StateError('SHIFT AI could not complete this request');
     final data=Map<String,dynamic>.from(response.data as Map);
     if(data['error']!=null)throw StateError(data['error'].toString());
     return data;
@@ -134,7 +134,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       final stored=await ShiftCloud.uploadImage(wid,picked.path);
       if(mounted)setState(()=>selectedSourcePath=stored);
     }catch(e){
-      if(mounted)setState(()=>message='Image upload failed: '+e.toString());
+      if(mounted)setState(()=>message=shiftFriendlyError(e));
     }
   }
   Future<void> createMedia() async{
@@ -156,7 +156,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
         if(type=='voice')'language':'en-US',
       });
       if(mounted)setState(()=>generatedMedia=res);
-    }catch(e){if(mounted)setState(()=>message='SHIFT AI media: '+e.toString());}
+    }catch(e){if(mounted)setState(()=>message=shiftFriendlyError(e));}
     finally{if(mounted)setState(()=>mediaBusy=false);}
   }
   Future<void> refresh()async{
@@ -350,7 +350,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             Text(configured?'Models are chosen automatically. A successful generation is required to confirm they work.':'An administrator needs to configure a working AI connection.'),
             const SizedBox(height:6),
             Text(research?'Live research available':
-              'For live research configure Brave Search or OpenAI native web search.',
+              'Live research is not available right now.',
               style:const TextStyle(fontSize:12)),
           ])),
           const Section('AI request'),
@@ -369,12 +369,12 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           FilledButton.icon(onPressed:loading||!configured?null:run,
             icon:const Icon(Icons.auto_awesome),
             label:const Text('Run SHIFT AI')),
-          if(loading)const LinearProgressIndicator(),
+          if(loading)const Padding(padding:EdgeInsets.only(top:12),child:ShiftSkeleton(rows:4)),
           if(progress.isNotEmpty)Text(progress,
             style:Theme.of(context).textTheme.bodySmall),
           if(message.isNotEmpty)Text(message,
             style:TextStyle(color:Theme.of(context).colorScheme.error)),
-          if(output!=null)...[
+          if(!loading&&output!=null)...[
             const Section('Latest result'),
             Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               SelectableText((output!['summary']??'').toString()),
@@ -417,7 +417,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
               onPressed:semanticBusy||!nemotronConfigured?null:searchKnowledge,
               icon:const Icon(Icons.manage_search),
               label:const Text('Semantic search')),
-            if(semanticBusy)const LinearProgressIndicator(),
+            if(semanticBusy)const Padding(padding:EdgeInsets.only(top:12),child:ShiftSkeleton(rows:3)),
             if(semanticMatches.isNotEmpty)...[
               const SizedBox(height:12),
               Text('Relevant saved sources',
@@ -465,7 +465,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
                 ?null:createMedia,
               icon:const Icon(Icons.auto_awesome),
               label:Text(mediaBusy?'Generating…':'Generate media')),
-            if(mediaBusy)const LinearProgressIndicator(),
+            if(mediaBusy)const Padding(padding:EdgeInsets.only(top:12),child:ShiftSkeleton(rows:3)),
             if(generatedMedia!=null)...[
               const SizedBox(height:8),
               if(generatedMedia!['type']=='image'||generatedMedia!['type']=='image_edit')
