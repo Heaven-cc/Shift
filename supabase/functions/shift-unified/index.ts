@@ -42,7 +42,7 @@ function capabilities(){
  const search=!!env("SHIFT_BRAVE_SEARCH_API_KEY")||(p==="openai"&&text);
  return {text,research:search&&text,knowledge:has("embedding"),
   image:has("image"),edit:has("image_edit"),voice:has("voice"),
-  creative:text||has("image")||has("voice")||has("image_edit"),
+  creative:text||has("image")||has("voice")||has("image_edit")||has("embedding"),
   autoSelection:true,
   note:"Configured describes server-side settings; live inference is not yet verified."};
 }
