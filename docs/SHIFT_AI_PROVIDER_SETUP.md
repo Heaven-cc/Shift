@@ -7,14 +7,15 @@ The new `shift-ai` Supabase Edge Function provides user-initiated research, comp
 
 ## Configure your AI key in Supabase (backend only)
 Go to the SHIFT project's **Edge Functions → Secrets** screen. Configure:
-- `SHIFT_AI_PROVIDER` = one of `openai`, `gemini`, `groq`, `openai-compatible`.
-- `SHIFT_AI_API_KEY` = the provider API key. Never paste it into Flutter or commit it.
-- `SHIFT_AI_MODEL` = an enabled model ID for that provider, compatible with the selected endpoint.
+- `SHIFT_AI_PROVIDER` is optional and defaults to `nvidia`; explicitly set `openai`, `gemini`, `groq`, or `openai-compatible` only when you intend those providers.
+- For NVIDIA text, use `SHIFT_NVIDIA_MISTRAL_MODEL` and/or `SHIFT_NVIDIA_GLM_MODEL` (GLM 5.3 ID: `z-ai/glm-5.3`), and a matching `SHIFT_NVIDIA_MISTRAL_API_KEY`, `SHIFT_NVIDIA_GLM_API_KEY`, or shared `SHIFT_NVIDIA_API_KEY`. The model ID and backend key are sufficient for NVIDIA; no separate provider entry is necessary.
+- `SHIFT_AI_API_KEY` = the API key for explicitly selected non-NVIDIA providers. Never paste it into Flutter or commit it.
+- `SHIFT_AI_MODEL` = an enabled model ID for that explicitly selected non-NVIDIA provider, compatible with its endpoint.
 - `SHIFT_AI_BASE_URL` = optional explicit HTTPS **chat completions endpoint** for `openai-compatible` only. It must not target a private/local host.
 
 **Groq is optional** and not a hardcoded default. The existing `shift-generate-text` Studio caption and editing tools have also been migrated to `SHIFT_AI_PROVIDER`, `SHIFT_AI_MODEL`, and `SHIFT_AI_API_KEY`. The older Groq-specific key is no longer required by SHIFT's active text-generation path. Groq is an optional explicitly selected provider.
 
-The backend reports only the selected provider, model, and whether credentials are present; it never returns the API key.
+The backend returns the universal identity `SHIFT AI` and whether a text backend is configured; it never returns the provider, model, or API key in public status.
 
 ## Web research access
 An ordinary text-model key does **not** automatically grant internet access. The backend supports two grounded web research routes:
