@@ -90,9 +90,9 @@ async function indexKnowledge(db:ReturnType<typeof service>,wid:string){
   const digest=await sha(content);
   if(hashes.get(item.type+":"+item.id)!==digest)changed.push({doc:item,content,digest});
  }
- if(changed.length>32)throw Error("too_many_sources");
- for(let i=0;i<changed.length;i+=8){
-  const chunk=changed.slice(i,i+8);
+ const batch=changed.slice(0,32);
+ for(let i=0;i<batch.length;i+=8){
+  const chunk=batch.slice(i,i+8);
   const vectors=await vectorize(chunk.map(x=>x.content),"passage");
   const values=chunk.map((x,n)=>({
    workspace_id:wid,source_type:x.doc.type,source_id:x.doc.id,model_id:MODEL,
@@ -103,7 +103,7 @@ async function indexKnowledge(db:ReturnType<typeof service>,wid:string){
    onConflict:"workspace_id,source_type,source_id,model_id"});
   if(saveError)throw Error("knowledge_storage_error");
  }
- return {indexed:changed.length,unchanged:existing.length-changed.length,total:existing.length};
+ return {indexed:batch.length,unchanged:existing.length-changed.length,total:existing.length,remaining:changed.length-batch.length};
 }
 async function handle(req:Request){
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:cors});
