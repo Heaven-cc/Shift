@@ -167,10 +167,14 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     setState((){loading=true;message='';progress='Sending AI request…';});
     try{
       final res=await action('run',{
+        'async':true,
         'mode':mode,'prompt':prompt.text.trim(),
         'requestKey':'shift-workspace-'+DateTime.now().microsecondsSinceEpoch.toString()});
       if(res['status']=='completed'&&res['result'] is Map){
-        if(mounted)setState(()=>output=Map<String,dynamic>.from(res['result'] as Map));
+        if(mounted)setState((){
+          output=Map<String,dynamic>.from(res['result'] as Map);
+          progress='';
+        });
         await refresh();
       }else if(res['status']=='running'&&res['jobId'] is String){
         if(mounted)setState(()=>progress='SHIFT AI is generating in the cloud. '
@@ -189,7 +193,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     try{
       final current=await action('job_status',{'jobId':id});
       if(current['status']=='completed'&&current['result'] is Map){
-        if(mounted)setState(()=>output=Map<String,dynamic>.from(current['result'] as Map));
+        if(mounted)setState((){
+          output=Map<String,dynamic>.from(current['result'] as Map);
+          progress='';
+        });
       }else if(current['status']=='failed'){
         throw StateError(current['error']?.toString()??'ai_failed');
       }else if(current['status']=='running'||current['status']=='pending'){
