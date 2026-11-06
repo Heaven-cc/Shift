@@ -114,7 +114,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   messages:[{role:"system",content:system},{role:"user",content:prompt}]
  };
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),90000);
+ const timeout=setTimeout(()=>controller.abort(),40000);
  try{
   const started=Date.now();
   const response=await fetch(c.url,{method:"POST",signal:controller.signal,
