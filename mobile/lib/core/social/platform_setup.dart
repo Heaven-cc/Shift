@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'social_platforms.dart';
+import '../ui/design.dart';
 
 /// Informational setup guide. Does not request tokens or claim OAuth succeeded.
 Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platform) {
@@ -32,9 +33,7 @@ Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platfor
                   mode: LaunchMode.externalApplication,
                 );
                 if (!opened && sheetContext.mounted) {
-                  ScaffoldMessenger.of(sheetContext).showSnackBar(
-                    const SnackBar(content: Text('Unable to open the developer website.')),
-                  );
+                  showShiftError(sheetContext,'Unable to open the developer website.',title:'Could not open website');
                 }
               },
               icon: const Icon(Icons.open_in_new),
@@ -58,8 +57,6 @@ Future<void> openPlatformHome(BuildContext context, ShiftSocialPlatform platform
     Uri.parse(platform.homeUrl), mode: LaunchMode.externalApplication,
   );
   if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Could not open ${platform.name}.')),
-    );
+    showShiftError(context,'Could not open ${platform.name}.',title:'Could not open website');
   }
 }
