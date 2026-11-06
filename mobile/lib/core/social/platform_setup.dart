@@ -24,7 +24,9 @@ Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platfor
             const SizedBox(height: 12),
             Text(platform.connectionNote),
             const SizedBox(height: 12),
-            const Text('Connect your Postiz workspace using the connection panel, then add this social channel inside Postiz. Your self-hosted Postiz administrator may need to configure its platform API credentials first. No publishing happens from this screen.'),
+            Text(platform.id == 'bluesky'
+              ? 'Connect Bluesky from Social Accounts using a dedicated app password. Only approved text posts can be scheduled directly at this time.'
+              : 'This platform requires supported account authorization before publishing. You can still create, review and manually export posts for this destination. No post is published from this screen.'),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () async {
