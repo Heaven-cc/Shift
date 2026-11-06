@@ -149,7 +149,8 @@ Deno.serve(async (req:Request)=>{
 
   const generate=async():Promise<Response>=>{
   const controller=new AbortController();
-  const deadline=setTimeout(()=>controller.abort(),75000);
+  const generationDeadline=Date.now()+120000;
+  const deadline=setTimeout(()=>controller.abort(),120000);
   try {
     const safety=[
       "Create original social media copy in valid JSON only.",
@@ -189,7 +190,11 @@ Deno.serve(async (req:Request)=>{
     };
     let text="";
     let attemptedError:unknown;
-    for(const candidate of aiCandidates){
+    for(let index=0;index<aiCandidates.length;index++){
+     const candidate=aiCandidates[index];
+     const remaining=Math.max(0,generationDeadline-Date.now()-1500);
+     const attemptMs=Math.floor(remaining/(aiCandidates.length-index));
+     if(attemptMs<1000)throw attemptedError??Error('provider_timeout');
      const modelRole=candidate.model===(Deno.env.get("SHIFT_NVIDIA_GLM_MODEL")||"")?"glm":
        candidate.model===(Deno.env.get("SHIFT_NVIDIA_MISTRAL_MODEL")||"")?"mistral":"other";
      console.info("SHIFT Studio model attempt started",{modelRole});
@@ -198,7 +203,7 @@ Deno.serve(async (req:Request)=>{
      const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
       const isGlm53=provider==="nvidia"&&providerModel==="z-ai/glm-5.3";
      const response=await fetch(endpoint,{
-      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(33000)]),
+      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(attemptMs)]),
       headers:{"authorization":`Bearer ${providerKey}`,
         "content-type":"application/json",
         "accept":(isMistral4||isGlm53)?"text/event-stream":"application/json"},
@@ -315,7 +320,7 @@ Deno.serve(async (req:Request)=>{
       "provider_invalid_response","provider_incomplete_stream","invalid_provider_json",
       "empty_caption"];
     const code=error instanceof Error&&["AbortError","TimeoutError"].includes(error.name)?
-      "provider_timeout":valid.includes(raw)?raw:"provider_network_or_parse_error";
+      "provider_timeout":raw==="provider_timeout"?"provider_timeout":valid.includes(raw)?raw:"provider_network_or_parse_error";
     console.error("SHIFT Studio AI generation failed",{jobId,error:code});
     await admin.from("shift_generation_jobs").update({
       status:"failed",error_code:code,completed_at:new Date().toISOString(),

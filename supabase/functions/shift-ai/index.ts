@@ -96,7 +96,7 @@ async function readNvidiaSse(response:Response){
  if(!finished)throw Error("provider_incomplete_stream");
  return clean(text,16000);
 }
-async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean){
+async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean,timeoutMs:number){
  if(withWeb&&c.provider==="openai"){
   const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,tools:[{type:"web_search"}],tool_choice:"required",input:[{role:"system",content:system},{role:"user",content:prompt}],max_output_tokens:1800})});
   if(!r.ok)throw Error("provider_unavailable");
@@ -115,7 +115,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   messages:[{role:"system",content:system},{role:"user",content:prompt}]
  };
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),33000);
+ const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   const started=Date.now();
   const response=await fetch(c.url,{method:"POST",signal:controller.signal,
@@ -163,13 +163,19 @@ async function modelCallWithFallback(c:ReturnType<typeof settings>,system:string
    ...c,key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
    model:env("SHIFT_NVIDIA_"+role+"_MODEL")
  })).filter(x=>x.key&&x.model):[c];
+ const deadline=Date.now()+120000;
  let previous:unknown;
- for(const option of options){
+ for(let index=0;index<options.length;index++){
+  const option=options[index];
+  // Share 120 seconds across all configured models, including fallback.
+  const remaining=Math.max(0,deadline-Date.now()-1500);
+  const attemptMs=Math.floor(remaining/(options.length-index));
+  if(attemptMs<1000)throw previous??Error("provider_timeout");
   const modelRole=option.model===env("SHIFT_NVIDIA_GLM_MODEL")&&c.provider==="nvidia"?"glm":
     option.model===env("SHIFT_NVIDIA_MISTRAL_MODEL")&&c.provider==="nvidia"?"mistral":"other";
   const started=Date.now();
   console.info("SHIFT AI model attempt started",{modelRole});
-  try{return await modelCall(option,system,prompt,withWeb)}
+  try{return await modelCall(option,system,prompt,withWeb,attemptMs)}
   catch(error){
    previous=error;
    const reason=error instanceof Error?error.message:"";
