@@ -23,7 +23,8 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   String? selectedModel,selectedSourcePath;
   Map<String,dynamic>? generatedMedia;
   bool mediaBusy=false;
-  bool loading=false,configured=false,research=false;
+  bool loading=false,configured=false,research=false,statusChecked=false;
+  List<String> missingSecrets=[];
   String mode='research',message='',provider='';
   Map<String,dynamic>? output;
   List<Map<String,dynamic>> plans=[],history=[];
@@ -85,33 +86,57 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   Future<void> refresh()async{
     if(!mounted||!ref.read(workspaceProvider).cloudAuthenticated)return;
     setState(()=>loading=true);
+    // Provider readiness must never depend on unrelated history or media requests.
     try{
-      final res=await Future.wait([
-        action('status'),action('history'),action('plan_items'),
-        nvidiaRequest('status'),nvidiaRequest('history'),
-      ]);
+      final status=await action('status');
       if(!mounted)return;
       setState((){
-        configured=res[0]['configured']==true;
-        research=res[0]['researchAvailable']==true;
-        provider=(res[0]['provider']??'Not configured').toString()+' • '+
-          (res[0]['model']??'').toString();
-        history=(res[1]['history'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        plans=(res[2]['items'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        mediaHistory=(res[4]['items'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        nvidiaModels=(res[3]['models'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        if(selectedModel==null||!nvidiaModels.any((m)=>m['id']==selectedModel)){
-          final media=nvidiaModels.where((m)=>m['type']!='text');
-          selectedModel=media.isEmpty?null:media.first['id']?.toString();
-        }
+        configured=status['configured']==true;
+        statusChecked=true;
+        research=status['researchAvailable']==true;
+        provider=(status['provider']??'Not configured').toString()+' • '+
+          (status['model']??'No model selected').toString();
+        missingSecrets=(status['missingSecrets'] as List? ?? const [])
+          .map((v)=>v.toString()).toList();
         message='';
       });
-    }catch(e){if(mounted)setState(()=>message=e.toString());}
-    finally{if(mounted)setState(()=>loading=false);}
+    }catch(e){
+      if(mounted)setState((){
+        statusChecked=false;
+        message='Could not check AI connection: '+e.toString();
+      });
+    }finally{if(mounted)setState(()=>loading=false);}
+    // History and NVIDIA catalogue failures are non-fatal to text AI readiness.
+    final results=await Future.wait([
+      action('history').then<Object?>((v)=>v).catchError((Object e)=>null),
+      action('plan_items').then<Object?>((v)=>v).catchError((Object e)=>null),
+      nvidiaRequest('status').then<Object?>((v)=>v).catchError((Object e)=>null),
+      nvidiaRequest('history').then<Object?>((v)=>v).catchError((Object e)=>null),
+    ]);
+    if(!mounted)return;
+    final h=results[0],p=results[1],n=results[2],m=results[3];
+    setState((){
+      if(h is Map){
+        history=(h['history'] as List? ?? const [])
+          .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+      }
+      if(p is Map){
+        plans=(p['items'] as List? ?? const [])
+          .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+      }
+      if(n is Map){
+        nvidiaModels=(n['models'] as List? ?? const [])
+          .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+        if(selectedModel==null||!nvidiaModels.any((v)=>v['id']==selectedModel)){
+          final media=nvidiaModels.where((v)=>v['type']!='text');
+          selectedModel=media.isEmpty?null:media.first['id']?.toString();
+        }
+      }
+      if(m is Map){
+        mediaHistory=(m['items'] as List? ?? const [])
+          .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+      }
+    });
   }
   Future<void> run()async{
     if(prompt.text.trim().length<5){toast(context,'Enter instructions first.');return;}
@@ -165,7 +190,20 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             Text(configured?'AI provider configured':'AI provider not configured',
               style:Theme.of(context).textTheme.titleMedium),
             const SizedBox(height:6),
-            Text(configured?provider:'Add SHIFT_AI_PROVIDER, SHIFT_AI_MODEL and SHIFT_AI_API_KEY in Supabase Edge Function secrets.'),
+            Text(configured?provider:statusChecked
+              ?'SHIFT AI is not configured. Add these Supabase secrets:'
+              :'Unable to determine AI readiness. Tap Refresh to retry.'),
+            if(!configured&&statusChecked)...[
+              const SizedBox(height:6),
+              if(missingSecrets.isEmpty)
+                const Text('Check your selected AI provider and model ID.'),
+              ...missingSecrets.map((name)=>Padding(
+                padding:const EdgeInsets.only(top:3),
+                child:SelectableText('• '+name))),
+              const SizedBox(height:6),
+              const Text('NVIDIA requires the exact hosted model ID; a key alone is insufficient.',
+                style:TextStyle(fontSize:12)),
+            ],
             const SizedBox(height:6),
             Text(research?'Live research available':
               'For live research configure Brave Search or OpenAI native web search.',
