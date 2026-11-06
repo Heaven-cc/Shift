@@ -123,6 +123,10 @@ async function handle(req:Request){
  }
  if(action==="index"){
   if(!apiKey())return send({error:"embedding_not_configured"},503);
+  const {data:allowed,error:limitError}=await user.db.rpc("shift_ai_allow_request",{
+   p_user:user.uid,p_workspace:user.workspaceId,p_category:"research"
+  });
+  if(limitError||allowed!==true)return send({error:"embedding_limit_reached"},429);
   const result=await indexKnowledge(user.db,user.workspaceId);
   return send({status:"indexed",...result});
  }
@@ -130,6 +134,10 @@ async function handle(req:Request){
   if(!apiKey())return send({error:"embedding_not_configured"},503);
   const query=trim(body.query,600);
   if(query.length<3)return send({error:"invalid_query"},400);
+  const {data:allowed,error:limitError}=await user.db.rpc("shift_ai_allow_request",{
+   p_user:user.uid,p_workspace:user.workspaceId,p_category:"research"
+  });
+  if(limitError||allowed!==true)return send({error:"embedding_limit_reached"},429);
   const [vector]=await vectorize([query],"query");
   const {data,error}=await user.db.rpc("shift_match_knowledge",{
    p_workspace:user.workspaceId,p_model:MODEL,p_query_text:"["+vector.join(",")+"]",p_limit:8
@@ -149,12 +157,12 @@ Deno.serve(async req=>{
   const code=error instanceof Error?error.message:"embedding_failed";
   const allowed=["unauthorized","workspace_not_found","embedding_not_configured",
    "embedding_credentials_rejected","embedding_rate_limited","embedding_provider_unavailable",
-   "embedding_invalid_response","invalid_batch","knowledge_source_error",
+   "embedding_invalid_response","invalid_batch","embedding_limit_reached","knowledge_source_error",
    "knowledge_storage_error","knowledge_search_error","too_many_sources"];
   const safe=allowed.includes(code)?code:"embedding_failed";
   console.error("SHIFT Nemotron",{error:safe});
   return send({error:safe},safe==="unauthorized"?401:
-   safe==="embedding_rate_limited"?429:
+   safe==="embedding_rate_limited"||safe==="embedding_limit_reached"?429:
    safe==="embedding_not_configured"?503:502);
  }
 });
