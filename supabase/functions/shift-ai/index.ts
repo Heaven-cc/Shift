@@ -45,6 +45,51 @@ async function search(q:string,key:string){
  for(const x of data.web?.results||[]){try{const u=new URL(x.url);if(u.protocol!=="https:"||u.username||u.password||out.some(y=>y.url===u.toString()))continue;out.push({url:u.toString(),title:clean(x.title,200),summary:clean(x.description,500),publisher:u.hostname})}catch{}if(out.length>=8)break}
  return out;
 }
+async function readNvidiaSse(response:Response,deadline:AbortController){
+ if(!response.body)throw Error("provider_invalid_response");
+ const reader=response.body.getReader(),decoder=new TextDecoder();
+ let buffer="",text="",frames=0,first=false,finished=false;
+ try{
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   if(!value)continue;
+   buffer+=decoder.decode(value,{stream:true});
+   if(buffer.length>128000)throw Error("provider_invalid_response");
+   // SSE fields may span TCP chunks and use CRLF.
+   let marker=buffer.indexOf("\n\n");
+   while(marker>=0){
+    const frame=buffer.slice(0,marker);
+    buffer=buffer.slice(marker+2);
+    const lines=frame.split("\n").filter(x=>x.startsWith("data:"));
+    for(const line of lines){
+     const raw=line.slice(5).trim();
+     if(raw==="[DONE]"){finished=true;break;}
+     if(!raw)continue;
+     let event:any;try{event=JSON.parse(raw)}catch{throw Error("provider_invalid_response")}
+     if(event.error)throw Error("provider_upstream_error");
+     const delta=event.choices?.[0]?.delta;
+     if(typeof delta?.content==="string"){text+=delta.content;first=true;}
+     if(text.length>20000)throw Error("provider_response_too_large");
+     frames++;
+    }
+    if(finished)break;
+    marker=buffer.indexOf("\n\n");
+   }
+   if(finished)break;
+  }
+ }catch(e){
+  if(e instanceof Error&&["AbortError","TimeoutError"].includes(e.name))
+   throw Error("provider_timeout");
+  throw e;
+ }finally{
+  // Cancels a stalled connection if a terminal frame arrived.
+  if(finished){try{await reader.cancel()}catch{/* cleanup */}}
+ }
+ if(!first||!text.trim())throw Error("provider_empty_response");
+ if(!finished)throw Error("provider_incomplete_stream");
+ return clean(text,16000);
+}
 async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean){
  if(withWeb&&c.provider==="openai"){
   const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,tools:[{type:"web_search"}],tool_choice:"required",input:[{role:"system",content:system},{role:"user",content:prompt}],max_output_tokens:1800})});
@@ -53,42 +98,55 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   for(const p of parts)for(const a of (p.annotations||[])){if(a.type!=="url_citation")continue;try{const u=new URL(a.url);if(u.protocol==="https:"&&!sources.some(x=>x.url===u.toString()))sources.push({url:u.toString(),title:clean(a.title,200),summary:"Web search citation",publisher:u.hostname})}catch{}}
   return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
  }
- let r:Response;
+ const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
+ const useStream=isMistral4;
+ const tokens=isMistral4?1100:1800;
+ const payload={
+  model:c.model,stream:useStream,
+  ...(c.provider==="openai"?{max_completion_tokens:tokens}:{max_tokens:tokens}),
+  ...(isMistral4?{reasoning_effort:"low"}:{}),
+  messages:[{role:"system",content:system},{role:"user",content:prompt}]
+ };
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),90000);
  try{
-  // NVIDIA Mistral Large 4 supports low/medium/high reasoning.
-  // "none" is unsupported and caused 400 invalid_request_error.
-  // Use low reasoning for interactive social media planning.
-  const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
-  const tokenBudget=isMistral4?1400:1800;
-  const payload={
-    model:c.model,stream:false,
-    ...(c.provider==="openai"?{max_completion_tokens:tokenBudget}:{max_tokens:tokenBudget}),
-    ...(isMistral4?{reasoning_effort:"low"}:{}),
-    messages:[{role:"system",content:system},{role:"user",content:prompt}]
-  };
-  r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(90000),
-   headers:{"Content-Type":"application/json","Accept":"application/json",
+  const started=Date.now();
+  const response=await fetch(c.url,{method:"POST",signal:controller.signal,
+   headers:{"Content-Type":"application/json",
+     "Accept":useStream?"text/event-stream":"application/json",
      "Authorization":"Bearer "+c.key},
    body:JSON.stringify(payload)});
+  if(!response.ok){
+   // Log HTTP status and request latency, never raw provider payload or credentials.
+   console.warn("SHIFT NVIDIA upstream rejected request",{
+    provider:c.provider,status:response.status,elapsedMs:Date.now()-started});
+   if(response.status===401||response.status===403)throw Error("provider_credentials_rejected");
+   if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
+   if(response.status===429)throw Error("provider_rate_limited");
+   if(response.status>=500)throw Error("provider_upstream_error");
+   throw Error("provider_unavailable");
+  }
+  let content="";
+  if(useStream){
+   const contentType=response.headers.get("content-type")??"";
+   if(!contentType.includes("text/event-stream"))throw Error("provider_invalid_response");
+   content=await readNvidiaSse(response,controller);
+  }else{
+   let d:any;try{d=await response.json()}catch{throw Error("provider_invalid_response")}
+   const raw=d.choices?.[0]?.message?.content;
+   content=typeof raw==="string"?raw:Array.isArray(raw)?
+    raw.map((p:any)=>clean(p.text,16000)).join("\n"):"";
+  }
+  if(!content.trim())throw Error("provider_empty_response");
+  console.info("SHIFT AI provider response completed",{provider:c.provider,
+   modelRole:isMistral4?"mistral4":"other",elapsedMs:Date.now()-started});
+  return {text:clean(content,16000),sources:[]};
  }catch(error){
-  if(error instanceof Error && ["TimeoutError","AbortError"].includes(error.name))
+  if(error instanceof Error&&["AbortError","TimeoutError"].includes(error.name))
    throw Error("provider_timeout");
+  if(error instanceof Error&&error.message.startsWith("provider_"))throw error;
   throw Error("provider_network_error");
- }
- if(!r.ok){
-  if(r.status===401||r.status===403)throw Error("provider_credentials_rejected");
-  if(r.status===404||r.status===400||r.status===422)throw Error("provider_model_or_request_invalid");
-  if(r.status===429)throw Error("provider_rate_limited");
-  if(r.status>=500)throw Error("provider_upstream_error");
-  throw Error("provider_unavailable");
- }
- let d:any;
- try{d=await r.json();}catch{throw Error("provider_invalid_response");}
- const content=d.choices?.[0]?.message?.content;
- const text=typeof content==="string"?content:
-  Array.isArray(content)?content.map((p:any)=>clean(p.text,16000)).join("\n"):"";
- if(!text.trim())throw Error("provider_empty_response");
- return {text:clean(text,16000),sources:[]};
+ }finally{clearTimeout(timeout)}
 }
 async function handler(req:Request){
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers});
@@ -173,7 +231,7 @@ async function handler(req:Request){
   const safe=["blocked_topic","provider_unavailable","provider_timeout",
    "provider_network_error","provider_credentials_rejected","provider_model_or_request_invalid",
    "provider_rate_limited","provider_upstream_error","provider_invalid_response",
-   "provider_empty_response","search_unavailable","invalid_model_output","invalid_calendar",
+   "provider_empty_response","provider_incomplete_stream","provider_response_too_large","search_unavailable","invalid_model_output","invalid_calendar",
    "plan_storage_failed","storage_error"].includes(m)?m:"ai_failed";
   console.error("SHIFT AI generation failure",{jobId,code:safe,provider:cfg.provider});
   await a.db.from("shift_generation_jobs").update({status:"failed",error_code:safe,
