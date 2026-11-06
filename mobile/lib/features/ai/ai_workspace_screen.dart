@@ -24,7 +24,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   Map<String,dynamic>? generatedMedia;
   bool mediaBusy=false;
   bool loading=false,configured=false,research=false;
-  String mode='research',message='',provider='';
+  String mode='research',message='',provider='',progress='';
   Map<String,dynamic>? output;
   List<Map<String,dynamic>> plans=[],history=[];
   @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
@@ -139,15 +139,62 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
+  Future<void> waitForJob(String jobId)async{
+    // Poll one existing cloud job: never create a second NVIDIA request.
+    for(var attempt=0;attempt<28;attempt++){
+      await Future<void>.delayed(const Duration(seconds:4));
+      if(!mounted)return;
+      final current=await action('job_status',{'jobId':jobId});
+      final state=current['status']?.toString();
+      if(state=='completed'&&current['result'] is Map){
+        setState((){
+          output=Map<String,dynamic>.from(current['result'] as Map);
+          progress='';
+        });
+        await refresh();
+        return;
+      }
+      if(state=='failed')throw StateError(current['error']?.toString()??'ai_failed');
+      if(state=='completed')throw StateError('AI returned no usable result.');
+    }
+    if(mounted){
+      setState(()=>progress='Still processing. This job is saved in AI history. '
+        'Use Refresh to check it later.');
+    }
+  }
   Future<void> run()async{
     if(prompt.text.trim().length<5){toast(context,'Enter instructions first.');return;}
-    setState((){loading=true;message='';});
+    setState((){loading=true;message='';progress='Sending AI request…';});
     try{
-      final res=await action('run',{'mode':mode,'prompt':prompt.text.trim(),
+      final res=await action('run',{
+        'mode':mode,'prompt':prompt.text.trim(),
         'requestKey':'shift-workspace-'+DateTime.now().microsecondsSinceEpoch.toString()});
-      if(res['status']!='completed'||res['result'] is! Map)throw StateError('Request did not complete');
-      if(mounted)setState(()=>output=Map<String,dynamic>.from(res['result'] as Map));
-      await refresh();
+      if(res['status']=='completed'&&res['result'] is Map){
+        if(mounted)setState(()=>output=Map<String,dynamic>.from(res['result'] as Map));
+        await refresh();
+      }else if(res['status']=='running'&&res['jobId'] is String){
+        if(mounted)setState(()=>progress='SHIFT AI is generating in the cloud. '
+          'You can leave this page and return to its saved job.');
+        await waitForJob(res['jobId'] as String);
+      }else{
+        throw StateError('The AI server did not accept the request.');
+      }
+    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
+    finally{if(mounted)setState(()=>loading=false);}
+  }
+  Future<void> resumeJob(Map<String,dynamic> job)async{
+    final id=job['id']?.toString();
+    if(id==null||loading)return;
+    setState((){loading=true;message='';progress='Checking existing AI job…';});
+    try{
+      final current=await action('job_status',{'jobId':id});
+      if(current['status']=='completed'&&current['result'] is Map){
+        if(mounted)setState(()=>output=Map<String,dynamic>.from(current['result'] as Map));
+      }else if(current['status']=='failed'){
+        throw StateError(current['error']?.toString()??'ai_failed');
+      }else if(current['status']=='running'||current['status']=='pending'){
+        await waitForJob(id);
+      }
     }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
@@ -212,6 +259,8 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
             icon:const Icon(Icons.auto_awesome),
             label:const Text('Run SHIFT AI')),
           if(loading)const LinearProgressIndicator(),
+          if(progress.isNotEmpty)Text(progress,
+            style:Theme.of(context).textTheme.bodySmall),
           if(message.isNotEmpty)Text(message,
             style:TextStyle(color:Theme.of(context).colorScheme.error)),
           if(output!=null)...[
@@ -326,8 +375,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           ...history.map((h)=>ListTile(
             title:Text('AI job • '+(h['status']??'').toString()),
             subtitle:Text((h['created_at']??'').toString()),
-            onTap:(){if(h['result'] is Map)setState(()=>
-              output=Map<String,dynamic>.from(h['result'] as Map));},
+            onTap:()=>resumeJob(h),
           )),
         ],
       ]));
