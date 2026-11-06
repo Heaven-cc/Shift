@@ -55,14 +55,15 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
  }
  let r:Response;
  try{
-  // NVIDIA Mistral Large 4 supports reasoning_effort=none. An ordinary
-  // content-plan request should not consume a long deliberation budget.
+  // NVIDIA Mistral Large 4 supports low/medium/high reasoning.
+  // "none" is unsupported and caused 400 invalid_request_error.
+  // Use low reasoning for interactive social media planning.
   const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
-  const tokenBudget=isMistral4?1200:1800;
+  const tokenBudget=isMistral4?1800:1800;
   const payload={
     model:c.model,stream:false,
     ...(c.provider==="openai"?{max_completion_tokens:tokenBudget}:{max_tokens:tokenBudget}),
-    ...(isMistral4?{reasoning_effort:"none",temperature:0.4}:{}),
+    ...(isMistral4?{reasoning_effort:"low"}:{}),
     messages:[{role:"system",content:system},{role:"user",content:prompt}]
   };
   r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(45000),
