@@ -1,537 +1,387 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/cloud/shift_cloud.dart';
 import '../../core/state/workspace.dart';
 import '../../core/ui/design.dart';
 
+/// One AI surface; only the backend selects NVIDIA specialists.
 class AiWorkspaceScreen extends ConsumerStatefulWidget {
   const AiWorkspaceScreen({super.key});
   @override ConsumerState<AiWorkspaceScreen> createState()=>_AiState();
 }
 class _AiState extends ConsumerState<AiWorkspaceScreen>{
-  static const modes=<String,String>{
-    'research':'Live research','competitors':'Competitor research',
-    'analyze':'Analyze sources','ideas':'Content ideas',
-    'strategy':'Content strategy','calendar':'Content calendar',
-    'improve':'Improve content'};
   final prompt=TextEditingController();
-  final mediaPrompt=TextEditingController();
-  final semanticQuery=TextEditingController();
-  bool nemotronConfigured=false,semanticBusy=false;
-  int knowledgeCount=0;
-  List<Map<String,dynamic>> semanticMatches=[];
-  List<Map<String,dynamic>> nvidiaModels=[],mediaHistory=[];
-  String? selectedModel,selectedSourcePath;
-  Map<String,dynamic>? generatedMedia;
-  bool mediaBusy=false;
-  bool loading=false,configured=false,research=false;
-  String mode='research',message='',provider='',progress='';
-  Map<String,dynamic>? output;
-  List<Map<String,dynamic>> plans=[],history=[];
-  @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
-  @override void dispose(){
-    prompt.dispose();mediaPrompt.dispose();semanticQuery.dispose();super.dispose();
+  bool loading=false,running=false,knowledgeBusy=false;
+  String? sourcePath;
+  String message='',progress='';
+  Map<String,dynamic> capabilities={};
+  Map<String,dynamic>? result;
+  List<Map<String,dynamic>> history=[],plans=[],mediaHistory=[];
+  @override void initState(){
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());
   }
-  String displayAiError(Object error){
-    final raw=error.toString();
-    if(isTransientConnectionError(error))return
-      'Cannot connect to SHIFT Cloud. Check your Wi-Fi or mobile-data connection, '
-      'then reopen AI History to retrieve the saved job. Do not repeat Run SHIFT AI.';
-    if(raw.contains('provider_timeout'))return
-      'The NVIDIA model took too long to respond. Try a shorter request or retry. '
-      'Your API key and model selection have not been changed.';
-    if(raw.contains('provider_credentials_rejected'))return
-      'NVIDIA rejected the API key or this model is not authorized for your account. '
-      'Check the key and model access in NVIDIA Build.';
-    if(raw.contains('provider_model_or_request_invalid'))return
-      'NVIDIA rejected the model ID or request format. Check the exact model ID '
-      'shown on its NVIDIA Build API page.';
-    if(raw.contains('provider_rate_limited'))return
-      'NVIDIA rate limit reached. Try again later or review your provider quota.';
-    if(raw.contains('provider_upstream_error')||raw.contains('provider_network_error'))return
-      'NVIDIA is temporarily unavailable or the connection failed. Try again.';
-    if(raw.contains('provider_empty_response')||raw.contains('provider_invalid_response')
-       ||raw.contains('invalid_model_output'))return
-      'The AI response was incomplete. Try a simpler request, then retry.';
-    if(raw.contains('research_provider_not_configured'))return
-      'Online research needs SHIFT_BRAVE_SEARCH_API_KEY in SHIFT Supabase secrets.';
-    if(raw.contains('ai_provider_not_configured'))return
-      'Set the NVIDIA API key and exact Mistral/Kimi model ID in SHIFT Supabase secrets.';
-    if(raw.contains('generation_limit_reached'))return
-      'SHIFT AI request limit reached. Try again later.';
-    return 'SHIFT AI request failed. '+raw.replaceFirst('Bad state: ', '');
+  @override void dispose(){prompt.dispose();super.dispose();}
+  String readable(Object error){
+    final text=error.toString().toLowerCase();
+    if(networkError(error))return 'Cannot reach SHIFT Cloud. Check your connection. '
+      'Your saved task can be reopened without submitting it again.';
+    if(text.contains('provider_timeout'))return
+      'The NVIDIA text model timed out. Its configuration has not been changed.';
+    if(text.contains('provider_credentials_rejected'))return
+      'NVIDIA rejected its credentials or the model is not available for the account.';
+    if(text.contains('provider_model_or_request_invalid'))return
+      'NVIDIA rejected the model or its request format.';
+    if(text.contains('provider_rate_limited'))return 'NVIDIA rate limit reached.';
+    if(text.contains('research_provider_not_configured'))return
+      'Live research needs a configured search service in SHIFT Supabase.';
+    if(text.contains('capability_not_configured')||
+       text.contains('text_not_configured'))return
+      'The requested AI capability is not configured yet.';
+    return error.toString().replaceFirst('Bad state: ','');
   }
-  Future<Map<String,dynamic>> action(String operation,[Map<String,dynamic> extra=const {}])async{
-    final r=await ShiftCloud.client.functions.invoke('shift-ai',
-      body:<String,dynamic>{'action':operation,...extra});
-    if(r.data is! Map)throw StateError('Invalid AI response');
-    final data=Map<String,dynamic>.from(r.data as Map);
-    if(data['error']!=null)throw StateError(data['error'].toString());
-    return data;
+  bool networkError(Object error){
+    final s=error.toString().toLowerCase();
+    return s.contains('socketexception')||s.contains('failed host lookup')||
+      s.contains('functionsfetch')||s.contains('connection reset')||
+      s.contains('network is unreachable')||s.contains('connection timed out');
   }
-  Future<Map<String,dynamic>> nemotronRequest(String operation,
-      [Map<String,dynamic> payload=const {}]) async {
-    final response=await ShiftCloud.client.functions.invoke('shift-nemotron',
-      body:<String,dynamic>{'action':operation,...payload});
-    if(response.data is! Map)throw StateError('Unexpected semantic-search response');
+  Future<Map<String,dynamic>> call(String action,
+      [Map<String,dynamic> options=const {}])async{
+    final response=await ShiftCloud.client.functions.invoke('shift-unified',
+      body:<String,dynamic>{'action':action,...options});
+    if(response.data is! Map)throw StateError('Invalid SHIFT AI response.');
     final data=Map<String,dynamic>.from(response.data as Map);
     if(data['error']!=null)throw StateError(data['error'].toString());
     return data;
-  }
-  Future<void> indexKnowledge() async {
-    if(semanticBusy)return;
-    setState((){semanticBusy=true;message='';});
-    try{
-      final outcome=await nemotronRequest('index');
-      await loadNemotronStatus();
-      if(mounted)toast(context,
-        'Indexed ${outcome['indexed']??0} sources. '
-        '${outcome['remaining']??0} remaining.');
-    }catch(e){
-      if(mounted)setState(()=>message='Semantic index: '+e.toString());
-    }finally{if(mounted)setState(()=>semanticBusy=false);}
-  }
-  Future<void> loadNemotronStatus()async{
-    final data=await nemotronRequest('status');
-    if(!mounted)return;
-    setState((){
-      nemotronConfigured=data['configured']==true;
-      knowledgeCount=(data['indexedCount'] as num?)?.toInt()??0;
-    });
-  }
-  Future<void> searchKnowledge() async {
-    if(semanticBusy)return;
-    final question=semanticQuery.text.trim();
-    if(question.length<3){toast(context,'Enter a search topic.');return;}
-    setState((){semanticBusy=true;message='';});
-    try{
-      final data=await nemotronRequest('search',{'query':question});
-      if(mounted)setState(()=>semanticMatches=(data['matches'] as List? ?? const [])
-        .map((x)=>Map<String,dynamic>.from(x as Map)).toList());
-    }catch(e){
-      if(mounted)setState(()=>message='Semantic search: '+e.toString());
-    }finally{if(mounted)setState(()=>semanticBusy=false);}
-  }
-  Future<Map<String,dynamic>> nvidiaRequest(String operation,
-      [Map<String,dynamic> payload=const {}]) async {
-    final response=await ShiftCloud.client.functions.invoke('shift-nvidia',
-      body:<String,dynamic>{'action':operation,...payload});
-    if(response.data is! Map)throw StateError('Invalid NVIDIA response');
-    final data=Map<String,dynamic>.from(response.data as Map);
-    if(data['error']!=null)throw StateError(data['error'].toString());
-    return data;
-  }
-  Future<void> selectPhoto() async {
-    if(mediaBusy)return;
-    try {
-      final picked=await ImagePicker().pickImage(source:ImageSource.gallery,
-        imageQuality:85,maxWidth:1600,maxHeight:1600);
-      if(picked==null)return;
-      final wid=await ShiftCloud.workspaceId();
-      final stored=await ShiftCloud.uploadImage(wid,picked.path);
-      if(mounted)setState(()=>selectedSourcePath=stored);
-    }catch(e){
-      if(mounted)setState(()=>message='Image upload failed: '+e.toString());
-    }
-  }
-  Future<void> createMedia() async{
-    final matches=nvidiaModels.where((x)=>x['id']==selectedModel);
-    if(matches.isEmpty||mediaBusy)return;
-    final type=matches.first['type']?.toString()??'';
-    if(mediaPrompt.text.trim().length<5){
-      toast(context,'Enter text or instructions first.');return;
-    }
-    if(type=='image_edit'&&selectedSourcePath==null){
-      toast(context,'Select a photo for editing first.');return;
-    }
-    final operation=type=='voice'?'synthesize_voice':
-      type=='image_edit'?'edit_image':'generate_image';
-    setState((){mediaBusy=true;message='';generatedMedia=null;});
-    try{
-      final res=await nvidiaRequest(operation,{
-        'modelId':selectedModel,'prompt':mediaPrompt.text.trim(),
-        if(type=='image_edit')'sourcePath':selectedSourcePath,
-        if(type=='voice')'language':'en-US',
-      });
-      if(mounted)setState(()=>generatedMedia=res);
-    }catch(e){if(mounted)setState(()=>message='NVIDIA media: '+e.toString());}
-    finally{if(mounted)setState(()=>mediaBusy=false);}
   }
   Future<void> refresh()async{
     if(!mounted||!ref.read(workspaceProvider).cloudAuthenticated)return;
     setState(()=>loading=true);
     try{
-      final res=await Future.wait([
-        action('status'),action('history'),action('plan_items'),
-        nvidiaRequest('status'),nvidiaRequest('history'),
-        nemotronRequest('status'),
-      ]);
+      final data=await call('status');
       if(!mounted)return;
       setState((){
-        configured=res[0]['configured']==true;
-        research=res[0]['researchAvailable']==true;
-        provider=(res[0]['provider']??'Not configured').toString()+' • '+
-          (res[0]['model']??'').toString();
-        history=(res[1]['history'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        plans=(res[2]['items'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        mediaHistory=(res[4]['items'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        nvidiaModels=(res[3]['models'] as List? ?? const [])
-          .map((x)=>Map<String,dynamic>.from(x as Map)).toList();
-        if(selectedModel==null||!nvidiaModels.any((m)=>m['id']==selectedModel)){
-          final media=nvidiaModels.where((m)=>m['type']!='text');
-          selectedModel=media.isEmpty?null:media.first['id']?.toString();
-        }
-        nemotronConfigured=res[5]['configured']==true;
-        knowledgeCount=(res[5]['indexedCount'] as num?)?.toInt()??0;
+        capabilities=Map<String,dynamic>.from(data['capabilities'] as Map? ?? {});
         message='';
       });
-    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
+      try{
+        final response=await Future.wait([
+          call('history'),call('plan_items'),call('media_history')]);
+        if(!mounted)return;
+        setState((){
+          history=(response[0]['history'] as List? ?? const [])
+            .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+          plans=(response[1]['items'] as List? ?? const [])
+            .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+          mediaHistory=(response[2]['items'] as List? ?? const [])
+            .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
+        });
+      }catch(_){/* History is optional; keep the generator usable. */}
+    }catch(e){if(mounted)setState(()=>message=readable(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
-  // Network and DNS failures are not model failures. Never submit another
-  // generation request merely because status polling temporarily disconnects.
-  bool isTransientConnectionError(Object error){
-    final value=error.toString().toLowerCase();
-    return value.contains('socketexception')||
-      value.contains('failed host lookup')||
-      value.contains('connection reset')||
-      value.contains('connection refused')||
-      value.contains('connection timed out')||
-      value.contains('network is unreachable')||
-      value.contains('functionsfetch')||
-      value.contains('connection closed before full header')||
-      value.contains('clientexception')||
-      value.contains('handshakeexception');
+  Future<void> attachPhoto()async{
+    if(running)return;
+    try{
+      final photo=await ImagePicker().pickImage(source:ImageSource.gallery,
+        imageQuality:85,maxHeight:1600,maxWidth:1600);
+      if(photo==null)return;
+      final wid=await ShiftCloud.workspaceId();
+      final stored=await ShiftCloud.uploadImage(wid,photo.path);
+      if(mounted)setState(()=>sourcePath=stored);
+    }catch(e){
+      if(mounted)setState(()=>message='Image upload failed: '+readable(e));
+    }
   }
-  Future<void> waitForJob(String jobId)async{
-    var connectionFailures=0;
-    // This only checks an existing persisted job; it never creates another
-    // NVIDIA request and cannot duplicate provider charges.
-    for(var attempt=0;attempt<36;attempt++){
-      await Future<void>.delayed(Duration(seconds:connectionFailures>0?6:4));
+  Future<void> poll(String id)async{
+    var errors=0;
+    for(var i=0;i<36;i++){
+      await Future<void>.delayed(const Duration(seconds:4));
       if(!mounted)return;
-      Map<String,dynamic> current;
+      Map<String,dynamic> response;
       try{
-        current=await action('job_status',{'jobId':jobId});
-        connectionFailures=0;
-        if(mounted&&progress.contains('Connection interrupted')){
-          setState(()=>progress='Connected. Checking the saved AI job…');
-        }
+        response=await call('job_status',{'jobId':id});
+        errors=0;
       }catch(e){
-        if(!isTransientConnectionError(e))rethrow;
-        connectionFailures++;
-        if(mounted)setState(()=>progress='Connection interrupted. '
-          'Reconnecting to the saved AI job ($connectionFailures)…');
-        if(connectionFailures>=6){
-          if(mounted)setState(()=>progress='Unable to check the AI job right now. '
-            'The saved job remains in SHIFT Cloud. Reconnect and check AI History; '
-            'do not submit the same request again.');
+        if(!networkError(e))rethrow;
+        errors++;
+        if(mounted)setState(()=>progress='Reconnecting to saved AI job…');
+        if(errors>=5){
+          if(mounted)setState(()=>progress=
+            'Connection lost. Check the job in History when you reconnect.');
           return;
         }
         continue;
       }
-      final state=current['status']?.toString();
-      if(state=='completed'&&current['result'] is Map){
-        setState((){
-          output=Map<String,dynamic>.from(current['result'] as Map);
+      if(response['status']=='completed'&&response['result'] is Map){
+        if(mounted)setState((){
+          result=Map<String,dynamic>.from(response['result'] as Map);
           progress='';
         });
-        // A history refresh is optional; it must not hide a successful result
-        // if connectivity fails again after the job completed.
-        try{await refresh();}catch(_){/* result already shown */}
         return;
       }
-      if(state=='failed')throw StateError(current['error']?.toString()??'ai_failed');
-      if(state=='completed')throw StateError('AI returned no usable result.');
+      if(response['status']=='failed'){
+        throw StateError((response['error']??'generation_failed').toString());
+      }
     }
-    if(mounted){
-      setState(()=>progress='This job is saved in SHIFT Cloud. '
-        'Check AI History for its result later; do not submit it again.');
-    }
+    if(mounted)setState(()=>progress='Task saved. Check its status in History.');
   }
   Future<void> run()async{
-    if(prompt.text.trim().length<5){toast(context,'Enter instructions first.');return;}
-    setState((){loading=true;message='';progress='Sending AI request…';});
+    if(running)return;
+    if(prompt.text.trim().length<5){
+      toast(context,'Describe what SHIFT should create.');return;
+    }
+    setState((){
+      running=true;message='';progress='SHIFT is working…';result=null;
+    });
     try{
-      final res=await action('run',{
-        'async':true,
-        'mode':mode,'prompt':prompt.text.trim(),
-        'requestKey':'shift-workspace-'+DateTime.now().microsecondsSinceEpoch.toString()});
-      if(res['status']=='completed'&&res['result'] is Map){
+      final response=await call('run',{
+        'prompt':prompt.text.trim(),
+        'requestKey':'shift-workspace-'+DateTime.now().microsecondsSinceEpoch.toString(),
+        if(sourcePath!=null)'sourcePath':sourcePath,
+      });
+      if(response['status']=='running'&&response['jobId'] is String){
+        if(mounted)setState(()=>progress='SHIFT is working in the cloud. You can reopen this job.');
+        await poll(response['jobId'] as String);
+      }else if(response['result'] is Map){
         if(mounted)setState((){
-          output=Map<String,dynamic>.from(res['result'] as Map);
+          result=Map<String,dynamic>.from(response['result'] as Map);
           progress='';
         });
-        await refresh();
-      }else if(res['status']=='running'&&res['jobId'] is String){
-        if(mounted)setState(()=>progress='SHIFT AI is generating in the cloud. '
-          'You can leave this page and return to its saved job.');
-        await waitForJob(res['jobId'] as String);
-      }else{
-        throw StateError('The AI server did not accept the request.');
-      }
-    }catch(e){if(mounted)setState((){
-      progress='';
-      message=displayAiError(e);
-    });}
-    finally{if(mounted)setState(()=>loading=false);}
+      }else if(response['type']!=null||response['matches'] is List){
+        if(mounted)setState((){
+          result=response;
+          progress='';
+        });
+      }else{throw StateError('No AI result returned.');}
+      if(mounted&&result!=null){try{await refresh();}catch(_){}}
+    }catch(e){
+      if(mounted)setState((){
+        progress='';
+        message=readable(e);
+      });
+    }finally{if(mounted)setState(()=>running=false);}
   }
-  Future<void> resumeJob(Map<String,dynamic> job)async{
+  Future<void> resume(Map<String,dynamic> job)async{
     final id=job['id']?.toString();
-    if(id==null||loading)return;
-    setState((){loading=true;message='';progress='Checking existing AI job…';});
+    if(id==null||running)return;
+    setState(()=>running=true);
+    try{await poll(id);}
+    catch(e){if(mounted)setState(()=>message=readable(e));}
+    finally{if(mounted)setState(()=>running=false);}
+  }
+  Future<void> indexKnowledge()async{
+    if(knowledgeBusy)return;
+    setState(()=>knowledgeBusy=true);
     try{
-      final current=await action('job_status',{'jobId':id});
-      if(current['status']=='completed'&&current['result'] is Map){
-        if(mounted)setState((){
-          output=Map<String,dynamic>.from(current['result'] as Map);
-          progress='';
-        });
-      }else if(current['status']=='failed'){
-        throw StateError(current['error']?.toString()??'ai_failed');
-      }else if(current['status']=='running'||current['status']=='pending'){
-        await waitForJob(id);
-      }
-    }catch(e){if(mounted)setState((){
-      progress='';
-      message=displayAiError(e);
-    });}
-    finally{if(mounted)setState(()=>loading=false);}
+      final result=await call('index_knowledge');
+      if(mounted)toast(context,'Updated saved research index.');
+    }catch(e){if(mounted)setState(()=>message=readable(e));}
+    finally{if(mounted)setState(()=>knowledgeBusy=false);}
   }
-  Future<void> accept(Map<String,dynamic> p)async{
-    final ok=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
-      title:const Text('Save calendar draft?'),
-      content:Text((p['title']??'AI suggestion').toString()+
-        '\n\nCreates an unapproved cloud draft. Does not schedule or publish.'),
-      actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),
-      FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Save draft'))]))??false;
+  Future<void> accept(Map<String,dynamic> item)async{
+    final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('Add a draft?'),
+      content:Text((item['title']??'Proposed post').toString()+
+        '\n\nThe draft will not publish automatically.'),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(ctx,false),
+          child:const Text('Cancel')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),
+          child:const Text('Add draft')),
+      ]))??false;
     if(!ok||!mounted)return;
-    setState(()=>loading=true);
-    try{await action('accept_plan',{'itemId':p['id']});
-      await ref.read(workspaceProvider).openCloud();await refresh();
-      if(mounted)toast(context,'Saved as an unapproved cloud draft.');
-    }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
-    finally{if(mounted)setState(()=>loading=false);}
+    setState(()=>running=true);
+    try{
+      await call('accept_plan',{'itemId':item['id']});
+      await ref.read(workspaceProvider).openCloud();
+      await refresh();
+      if(mounted)toast(context,'Saved as a draft for review.');
+    }catch(e){if(mounted)setState(()=>message=readable(e));}
+    finally{if(mounted)setState(()=>running=false);}
   }
-  Widget section(String label,dynamic data){
+  Widget points(String title,dynamic data){
     if(data is! List||data.isEmpty)return const SizedBox.shrink();
     return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       const SizedBox(height:12),
-      Text(label,style:Theme.of(context).textTheme.titleMedium),
-      ...data.map((x)=>Padding(padding:const EdgeInsets.only(top:6),
-        child:SelectableText('• '+x.toString()))),
+      Text(title,style:Theme.of(context).textTheme.titleMedium),
+      ...data.map((v)=>Padding(
+        padding:const EdgeInsets.only(top:7),child:SelectableText('• '+v.toString())))
     ]);
+  }
+  Widget resultView(){
+    final x=result!;
+    final media=x['type']?.toString()??'';
+    final uri=Uri.tryParse(x['url']?.toString()??'');
+    if(media=='image'||media=='image_edit'||media=='voice'){
+      return Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text(media=='voice'?'Voiceover created':'Image created',
+          style:Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height:10),
+        if(media!='voice'&&uri?.scheme=='https')
+          Image.network(uri.toString(),height:230,fit:BoxFit.contain),
+        const SizedBox(height:8),
+        OutlinedButton.icon(onPressed:uri?.scheme=='https'
+          ?()=>launchUrl(uri!,mode:LaunchMode.externalApplication):null,
+          icon:const Icon(Icons.open_in_new),
+          label:Text(media=='voice'?'Open audio':'Open image')),
+        const Text('Private media link expires after ten minutes.',
+          style:TextStyle(fontSize:12)),
+      ]));
+    }
+    if(x['matches'] is List){
+      return Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text('Relevant saved research',style:Theme.of(context).textTheme.titleMedium),
+        ...((x['matches'] as List).whereType<Map>().map((m){
+          final link=Uri.tryParse(m['url']?.toString()??'');
+          return ListTile(contentPadding:EdgeInsets.zero,
+            title:Text(m['title']?.toString()??'Source'),
+            subtitle:Text(m['snippet']?.toString()??'',maxLines:3),
+            trailing:const Icon(Icons.open_in_new,size:18),
+            onTap:link?.scheme=='https'
+              ?()=>launchUrl(link!,mode:LaunchMode.externalApplication):null);
+        })),
+      ]));
+    }
+    return Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text('SHIFT response',style:Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height:8),
+      SelectableText(x['summary']?.toString()??''),
+      points('Findings',x['findings']),
+      points('Content ideas',x['ideas']),
+      points('Recommendations',x['recommendations']),
+      points('Content pillars',x['pillars']),
+      if(x['sources'] is List && (x['sources'] as List).isNotEmpty)...[
+        const SizedBox(height:10),
+        Text('Sources',style:Theme.of(context).textTheme.titleMedium),
+        ...((x['sources'] as List).whereType<Map>().map((m){
+          final link=Uri.tryParse(m['url']?.toString()??'');
+          return ListTile(contentPadding:EdgeInsets.zero,
+            title:Text(m['title']?.toString()??'Source'),
+            trailing:const Icon(Icons.open_in_new,size:18),
+            onTap:link?.scheme=='https'
+              ?()=>launchUrl(link!,mode:LaunchMode.externalApplication):null);
+        })),
+      ],
+      const SizedBox(height:10),
+      const Text('Review suggestions before approval or publication.',
+        style:TextStyle(fontSize:12)),
+    ]));
   }
   @override Widget build(BuildContext context){
     final w=ref.watch(workspaceProvider);
-    return Scaffold(appBar:AppBar(title:const Text('SHIFT AI Workspace'),
-      actions:[IconButton(onPressed:loading?null:refresh,
-        tooltip:'Refresh status',icon:const Icon(Icons.refresh))]),
+    final ready=capabilities['creative']==true;
+    final active=<String>[
+      if(capabilities['text']==true)'Writing',
+      if(capabilities['research']==true)'Research',
+      if(capabilities['knowledge']==true)'Knowledge',
+      if(capabilities['image']==true)'Images',
+      if(capabilities['edit']==true)'Image editing',
+      if(capabilities['voice']==true)'Voice',
+    ];
+    return Scaffold(
+      appBar:AppBar(title:const Text('SHIFT AI'),
+        actions:[IconButton(tooltip:'Refresh',
+          onPressed:running||loading?null:refresh,icon:const Icon(Icons.refresh))]),
       body:PageBody(children:[
-        const Heading('Research. Plan. Create.',
-          'AI uses your saved brand identity and requires approval for drafts.'),
+        const Heading('What should SHIFT create?',
+          'One assistant. SHIFT chooses its configured capabilities automatically.'),
         if(!w.cloudAuthenticated)...[
-          const Empty('Sign in required','Sign in to use secure AI and save research online.'),
-          FilledButton(onPressed:()=>context.push('/auth'),child:const Text('Sign in')),
-        ]else ...[
+          const Empty('Sign in to SHIFT Cloud',
+            'Your AI work is saved securely in your workspace.'),
+          FilledButton(onPressed:()=>context.push('/auth'),
+            child:const Text('Sign in')),
+        ]else...[
           Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text(configured?'AI provider configured':'AI provider not configured',
+            Text(ready?'SHIFT AI configured':'SHIFT AI needs configuration',
               style:Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height:8),
+            Text(active.isEmpty?'No configured AI capabilities found.'
+              :active.join(' · ')),
             const SizedBox(height:6),
-            Text(configured?provider:'Add SHIFT_AI_PROVIDER, SHIFT_AI_MODEL and SHIFT_AI_API_KEY in Supabase Edge Function secrets.'),
-            const SizedBox(height:6),
-            Text(research?'Live research available':
-              'For live research configure Brave Search or OpenAI native web search.',
-              style:const TextStyle(fontSize:12)),
+            const Text('Configured does not mean a model has passed live testing.',
+              style:TextStyle(fontSize:12)),
           ])),
-          const Section('AI request'),
-          DropdownButtonFormField<String>(
-            value:mode,decoration:const InputDecoration(labelText:'Task'),
-            items:modes.entries.map((v)=>DropdownMenuItem(
-              value:v.key,child:Text(v.value))).toList(),
-            onChanged:loading?null:(v)=>setState(()=>mode=v??'research')),
-          const SizedBox(height:12),
-          TextField(controller:prompt,maxLines:4,
-            decoration:const InputDecoration(labelText:'Instructions',
-              hintText:'Research my niche and suggest content opportunities')),
-          const SizedBox(height:12),
-          FilledButton.icon(onPressed:loading||!configured?null:run,
+          const Section('Instructions'),
+          TextField(controller:prompt,maxLines:5,
+            decoration:const InputDecoration(
+              labelText:'Ask SHIFT',
+              hintText:'Create three Instagram posts for my brand…')),
+          const SizedBox(height:10),
+          if(capabilities['edit']==true)
+            Row(children:[
+              OutlinedButton.icon(onPressed:running?null:attachPhoto,
+                icon:const Icon(Icons.attach_file),
+                label:Text(sourcePath==null?'Attach photo':'Photo attached')),
+              if(sourcePath!=null)
+                IconButton(tooltip:'Remove photo',
+                  onPressed:running?null:()=>setState(()=>sourcePath=null),
+                  icon:const Icon(Icons.close)),
+            ]),
+          const SizedBox(height:10),
+          FilledButton.icon(onPressed:running||loading||!ready?null:run,
             icon:const Icon(Icons.auto_awesome),
-            label:const Text('Run SHIFT AI')),
-          if(loading)const LinearProgressIndicator(),
+            label:Text(running?'SHIFT is working…':'Generate with SHIFT')),
+          if(running||loading)const LinearProgressIndicator(),
           if(progress.isNotEmpty)Text(progress,
             style:Theme.of(context).textTheme.bodySmall),
           if(message.isNotEmpty)Text(message,
             style:TextStyle(color:Theme.of(context).colorScheme.error)),
-          if(output!=null)...[
-            const Section('Latest result'),
-            Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              SelectableText((output!['summary']??'').toString()),
-              section('Findings',output!['findings']),
-              section('Ideas',output!['ideas']),
-              section('Recommendations',output!['recommendations']),
-              section('Content pillars',output!['pillars']),
-              section('Source references',(output!['sources'] as List? ?? const [])
-                .map((v)=>v is Map?(v['title'].toString()+' — '+v['url'].toString()):v)
-                .toList()),
-              const SizedBox(height:12),
-              const Text('AI findings are suggestions; verify claims and sources.',
-                style:TextStyle(fontSize:12)),
-            ])),
+          if(result!=null)...[
+            const Section('Result'),resultView(),
           ],
-          const Section('NVIDIA model library'),
-          const Text('Models use backend NVIDIA keys. Configured is not a successful live test.'),
-          if(nvidiaModels.isEmpty)
-            const Text('Model statuses unavailable. Refresh your account.'),
-          ...nvidiaModels.map((m)=>ListTile(
-            contentPadding:EdgeInsets.zero,
-            dense:true,
-            leading:Icon(m['configured']==true
-              ?Icons.check_circle_outline:Icons.lock_outline),
-            title:Text(m['label']?.toString()??'Model'),
-            subtitle:Text((m['type']??'').toString()+' • '+
-              (m['model']??'Set model ID in Supabase').toString()),
-            trailing:Text(m['configured']==true?'Configured':'Setup needed',
-              style:const TextStyle(fontSize:11)),
-          )),
-          const Section('Nemotron semantic research'),
-          Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text('Nemotron 3.5 Embed 1B',
-              style:Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height:8),
-            Text(nemotronConfigured
-              ?'Ready for indexing • $knowledgeCount saved knowledge entries'
-              :'Configure SHIFT_NVIDIA_API_KEY or '
-                'SHIFT_NVIDIA_NEMOTRON_EMBED_API_KEY in SHIFT Supabase.'),
-            const SizedBox(height:8),
-            const Text('Find relevant saved research by meaning, not just keywords. '
-              'Embeddings do not write captions or replace Mistral.',
-              style:TextStyle(fontSize:12)),
-            const SizedBox(height:12),
+          if(capabilities['knowledge']==true)...[
+            const Section('Saved research'),
+            const Text('SHIFT uses saved research for meaning-based search.'),
             OutlinedButton.icon(
-              onPressed:semanticBusy||!nemotronConfigured?null:indexKnowledge,
+              onPressed:knowledgeBusy?null:indexKnowledge,
               icon:const Icon(Icons.library_add_outlined),
-              label:const Text('Index saved research')),
-            const SizedBox(height:12),
-            TextField(controller:semanticQuery,
-              decoration:const InputDecoration(
-                labelText:'Search your research',
-                hintText:'What marketing trends match my audience?')),
-            const SizedBox(height:8),
-            FilledButton.icon(
-              onPressed:semanticBusy||!nemotronConfigured?null:searchKnowledge,
-              icon:const Icon(Icons.manage_search),
-              label:const Text('Semantic search')),
-            if(semanticBusy)const LinearProgressIndicator(),
-            if(semanticMatches.isNotEmpty)...[
-              const SizedBox(height:12),
-              Text('Relevant saved sources',
-                style:Theme.of(context).textTheme.titleSmall),
-              ...semanticMatches.map((item)=>ListTile(
-                contentPadding:EdgeInsets.zero,
-                title:Text(item['title']?.toString()??'Saved research'),
-                subtitle:Text(item['snippet']?.toString()??'',
-                  maxLines:3,overflow:TextOverflow.ellipsis),
-                trailing:const Icon(Icons.open_in_new,size:18),
-                onTap:(){
-                  final link=Uri.tryParse(item['url']?.toString()??'');
-                  if(link!=null&&link.scheme=='https'){
-                    launchUrl(link,mode:LaunchMode.externalApplication);
-                  }
-                },
-              )),
-            ],
-          ])),
-          const Section('Generate media with NVIDIA'),
-          if(nvidiaModels.any((m)=>m['type']!='text'))...[
-            DropdownButtonFormField<String>(
-              value:selectedModel,
-              isExpanded:true,
-              decoration:const InputDecoration(labelText:'Image, edit or voice model'),
-              items:nvidiaModels.where((m)=>m['type']!='text').map((m)=>
-                DropdownMenuItem<String>(
-                  value:m['id']?.toString(),
-                  child:Text(m['label']?.toString()??'Model',
-                    overflow:TextOverflow.ellipsis))).toList(),
-              onChanged:mediaBusy?null:(v)=>setState(()=>selectedModel=v),
-            ),
-            const SizedBox(height:12),
-            TextField(controller:mediaPrompt,maxLines:3,
-              decoration:const InputDecoration(labelText:'Creative instructions')),
-            if(nvidiaModels.any((m)=>m['id']==selectedModel&&m['type']=='image_edit'))...[
-              const SizedBox(height:8),
-              OutlinedButton.icon(onPressed:mediaBusy?null:selectPhoto,
-                icon:const Icon(Icons.image_outlined),
-                label:Text(selectedSourcePath==null?'Select image to edit':'Image selected')),
-            ],
-            const SizedBox(height:12),
-            FilledButton.icon(
-              onPressed:mediaBusy||!nvidiaModels.any((m)=>
-                  m['id']==selectedModel&&m['configured']==true&&m['type']!='text')
-                ?null:createMedia,
-              icon:const Icon(Icons.auto_awesome),
-              label:Text(mediaBusy?'Generating…':'Generate media')),
-            if(mediaBusy)const LinearProgressIndicator(),
-            if(generatedMedia!=null)...[
-              const SizedBox(height:8),
-              if(generatedMedia!['type']=='image'||generatedMedia!['type']=='image_edit')
-                Image.network(generatedMedia!['url']?.toString()??'',
-                  height:230,fit:BoxFit.contain),
-              ListTile(
-                title:const Text('Generated file saved privately'),
-                subtitle:const Text('Signed link expires after 10 minutes'),
-                trailing:const Icon(Icons.open_in_new),
-                onTap:(){
-                  final url=Uri.tryParse(generatedMedia!['url']?.toString()??'');
-                  if(url!=null)launchUrl(url,mode:LaunchMode.externalApplication);
-                },
-              ),
-            ],
+              label:Text(knowledgeBusy?'Updating…':'Update saved knowledge')),
           ],
-          const Section('Generated media history'),
-          const Text('Recent generated images and voice files are stored in your private SHIFT cloud workspace.'),
-          if(mediaHistory.isEmpty)
-            const Text('No NVIDIA media created yet.'),
-          ...mediaHistory.take(12).map((m)=>ListTile(
-            contentPadding:EdgeInsets.zero,
-            leading:Icon(m['type']=='voice'
-              ?Icons.record_voice_over_outlined:Icons.image_outlined),
-            title:Text((m['modelId']??'NVIDIA model').toString()),
-            subtitle:Text((m['prompt']??'').toString(),
-              maxLines:2,overflow:TextOverflow.ellipsis),
-            trailing:const Icon(Icons.open_in_new,size:18),
-            onTap:(){
-              final url=Uri.tryParse(m['url']?.toString()??'');
-              if(url!=null)launchUrl(url,mode:LaunchMode.externalApplication);
-            },
-          )),
-          const Section('Cloud calendar proposals'),
-          const Text('Accepting a proposal creates an unapproved draft and a planning date, not a publishing job.'),
-          if(plans.isEmpty)const Empty('No proposals','Run the Content calendar task first.'),
-          ...plans.map((p)=>Panel(child:ListTile(
-            contentPadding:EdgeInsets.zero,
-            title:Text((p['title']??'Draft').toString()),
-            subtitle:Text((p['platform']??'').toString()+' • '+
-              (p['planned_at']??'').toString()+'\n'+(p['state']??'').toString()),
-            isThreeLine:true,
-            trailing:p['state']=='proposed'
-              ?OutlinedButton(onPressed:loading?null:()=>accept(p),
-                 child:const Text('Add draft'))
-              :const Icon(Icons.check_circle_outline),
-          ))),
-          const Section('Cloud AI history'),
-          ...history.map((h)=>ListTile(
-            title:Text('AI job • '+(h['status']??'').toString()),
-            subtitle:Text((h['created_at']??'').toString()),
-            onTap:()=>resumeJob(h),
+          if(plans.isNotEmpty)...[
+            const Section('Content calendar'),
+            const Text('Ideas must be approved before being added as drafts.'),
+            ...plans.map((item)=>Panel(child:ListTile(
+              contentPadding:EdgeInsets.zero,
+              title:Text(item['title']?.toString()??'Proposed draft'),
+              subtitle:Text((item['planned_at']??'').toString()),
+              trailing:item['state']=='proposed'
+                ?OutlinedButton(onPressed:running?null:()=>accept(item),
+                  child:const Text('Add draft'))
+                :const Icon(Icons.check_circle_outline),
+            ))),
+          ],
+          if(mediaHistory.isNotEmpty)...[
+            const Section('Created media'),
+            ...mediaHistory.take(8).map((m)=>ListTile(
+              title:Text((m['prompt']??'Generated media').toString(),
+                maxLines:2,overflow:TextOverflow.ellipsis),
+              trailing:const Icon(Icons.open_in_new,size:18),
+              onTap:(){
+                final link=Uri.tryParse(m['url']?.toString()??'');
+                if(link?.scheme=='https')
+                  launchUrl(link!,mode:LaunchMode.externalApplication);
+              },
+            ))
+          ],
+          const Section('AI history'),
+          if(history.isEmpty)
+            const Empty('No AI jobs yet',
+              'Your saved requests will appear here.'),
+          ...history.take(15).map((item)=>ListTile(
+            title:Text((item['result'] is Map
+              ?((item['result'] as Map)['mode']??'SHIFT task')
+              :'SHIFT task').toString()),
+            subtitle:Text((item['status']??'Unknown').toString()),
+            trailing:const Icon(Icons.chevron_right),
+            onTap:()=>resume(item),
           )),
         ],
-      ]));
+      ]),
+    );
   }
 }
