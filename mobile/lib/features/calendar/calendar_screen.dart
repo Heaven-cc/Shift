@@ -105,7 +105,7 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
         'scheduledAt': next.toUtc().toIso8601String(),
       });
       await refresh();
-      if (mounted) toast(context, 'Publishing time updated in Supabase.');
+      if (mounted) toast(context, 'Publishing time updated in SHIFT.');
     } catch (e) {
       if (mounted) toast(context, 'Could not reschedule: $e');
     }
@@ -114,7 +114,7 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
   Future<void> cancel(Map<String, dynamic> job) async {
     final confirmed = await confirm(
       context, 'Cancel scheduled publishing?',
-      'This prevents the queued Supabase job from publishing.'
+      'This prevents the queued SHIFT publishing job from publishing.'
       ' Your approved post is retained for future use.',
       action: 'Cancel schedule',
     );
@@ -155,7 +155,7 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
           if (state == 'unknown')
             const Text('Outcome uncertain. Check the provider before attempting again.'),
           if (job['error_code'] != null)
-            Text('Status detail: ${job['error_code']}',
+            Text('Status: Needs attention',
               style: const TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
@@ -193,17 +193,15 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
     return PageBody(children: [
       const Heading('Your content calendar.', 'Plans, scheduled posts and publishing status in one place.'),
       ServiceNotice(text: w.cloudAuthenticated
-        ? 'Cloud scheduling: Supabase Cron is active. Only scheduled jobs in the cloud queue will publish; planning dates are reminders.'
+        ? 'Cloud scheduling: SHIFT Scheduler is active. Only scheduled jobs in the cloud queue will publish; planning dates are reminders.'
         : 'Offline workspace: plans stay on this device. Sign in to use cloud scheduling.'),
       Row(children: [
         const Expanded(child: Text('Publishing queue')),
         IconButton(onPressed: loading ? null : refresh,
           tooltip: 'Refresh server schedules', icon: const Icon(Icons.refresh)),
       ]),
-      if (loading) const LinearProgressIndicator(),
-      if (error != null) Padding(padding: const EdgeInsets.only(bottom: 12),
-        child: Text('Unable to load server schedules: $error',
-          style: TextStyle(color: Theme.of(context).colorScheme.error))),
+      if (loading) const ShiftSkeleton(rows:4),
+      ShiftErrorNotice(error,title:'Unable to load schedule'),
       Wrap(spacing: 8, runSpacing: 8, children: ['Month','Week','Day','List']
         .map((s) => ChoiceChip(label: Text(s),
           selected: view == s, onSelected: (_) => setState(() => view = s))).toList()),
