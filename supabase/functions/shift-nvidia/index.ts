@@ -11,6 +11,7 @@ type Slot={id:string;label:string;type:Category;hint:string;defaultModel:string;
 const slots:Slot[]=[
  {id:"mistral",label:"Mistral Large 4",type:"text",hint:"Primary writing and research analysis",defaultModel:"",protocol:"chat"},
  {id:"kimi",label:"Kimi K3.1 Pro",type:"text",hint:"Complex analysis",defaultModel:"",protocol:"chat"},
+ {id:"nemotron_embed",label:"Nemotron 3.5 Embed 1B",type:"text",hint:"Semantic search and knowledge retrieval (not caption generation)",defaultModel:"nvidia/nemotron-3.5-embed-1b",protocol:"embeddings"},
  {id:"flux_klein",label:"FLUX 3 Klein",type:"image",hint:"General image generation",defaultModel:"",protocol:"images"},
  {id:"qwen_image",label:"Qwen Image",type:"image",hint:"Text-rich graphics",defaultModel:"",protocol:"images"},
  {id:"sd35",label:"Stable Diffusion 3.5 Large",type:"image",hint:"Fallback image generator; check license",defaultModel:"",protocol:"images"},
@@ -23,7 +24,8 @@ function config(slot:Slot){
  const key=env("SHIFT_NVIDIA_"+slot.id.toUpperCase()+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY");
  const model=env("SHIFT_NVIDIA_"+slot.id.toUpperCase()+"_MODEL")||slot.defaultModel;
  const defaultChat="https://integrate.api.nvidia.com/v1/chat/completions";
- const endpoint=env("SHIFT_NVIDIA_"+slot.id.toUpperCase()+"_ENDPOINT")||(slot.type==="text"?defaultChat:"");
+ const endpoint=env("SHIFT_NVIDIA_"+slot.id.toUpperCase()+"_ENDPOINT")||(slot.id==="nemotron_embed"?
+   "https://integrate.api.nvidia.com/v1/embeddings":slot.type==="text"?defaultChat:"");
  // Endpoints are administrator-supplied secrets, never accepted in user requests.
  let valid=false;
  try{
@@ -37,7 +39,8 @@ function config(slot:Slot){
  const supported=(slot.type==="text"&&protocol==="chat")
    ||(slot.type==="image"&&protocol==="images")
    ||(slot.type==="image_edit"&&protocol==="image_json")
-   ||(slot.type==="voice"&&protocol==="nvidia_tts");
+   ||(slot.type==="voice"&&protocol==="nvidia_tts")
+   ||(slot.id==="nemotron_embed"&&protocol==="embeddings");
  return {key,model,endpoint,protocol,configured:!!key&&!!model&&valid&&supported};
 }
 const admin=()=>createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),
