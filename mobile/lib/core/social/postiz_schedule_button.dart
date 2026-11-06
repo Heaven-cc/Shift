@@ -95,9 +95,7 @@ class PostizScheduleButton extends StatelessWidget {
           : 'Submission outcome uncertain. Check Postiz before attempting again.'),
       ));
     } catch (error) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.toString().replaceFirst('Bad state: ','')),
-      ));
+      if(context.mounted)showShiftError(context,error,title:'Unable to schedule post');
     }
   }
 
