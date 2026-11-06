@@ -46,10 +46,10 @@ security invoker
 set search_path = ''
 as $body$
  select k.source_type,k.source_id,k.title,k.snippet,k.source_url,
-  (1 - (k.embedding <=> (p_query_text::extensions.vector(1024))))::double precision as similarity
+  (1 - (k.embedding OPERATOR(extensions.<=>) (p_query_text::extensions.vector(1024))))::double precision as similarity
  from public.shift_knowledge_embeddings k
  where k.workspace_id=p_workspace and k.model_id=p_model
- order by k.embedding <=> (p_query_text::extensions.vector(1024))
+ order by k.embedding OPERATOR(extensions.<=>) (p_query_text::extensions.vector(1024))
  limit least(greatest(coalesce(p_limit,8),1),12)
 $body$;
 revoke all on function public.shift_match_knowledge(uuid,text,text,integer) from public,anon,authenticated;
