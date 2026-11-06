@@ -87,8 +87,10 @@ class _DirectConnectionsPanelState extends State<DirectConnectionsPanel>{
             icon:const Icon(Icons.refresh),label:const Text('Refresh accounts')),
         ],
         if(loading)const ShiftSkeleton(rows:3),
-        if(message!=null)Padding(padding:const EdgeInsets.only(top:8),
-          child:Text(message!)),
+        if(message!=null&&message!.toLowerCase().contains('connected securely'))
+          Padding(padding:const EdgeInsets.only(top:8),child:Text(message!)),
+        if(message!=null&&!message!.toLowerCase().contains('connected securely'))
+          ShiftErrorNotice(message),
     ])),
   );
 }
