@@ -372,8 +372,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           if(loading)const Padding(padding:EdgeInsets.only(top:12),child:ShiftSkeleton(rows:4)),
           if(progress.isNotEmpty)Text(progress,
             style:Theme.of(context).textTheme.bodySmall),
-          if(message.isNotEmpty)Text(message,
-            style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          ShiftErrorNotice(message),
           if(!loading&&output!=null)...[
             const Section('Latest result'),
             Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
