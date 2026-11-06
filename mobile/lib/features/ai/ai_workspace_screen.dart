@@ -31,6 +31,9 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   @override void dispose(){prompt.dispose();mediaPrompt.dispose();super.dispose();}
   String displayAiError(Object error){
     final raw=error.toString();
+    if(isTransientConnectionError(error))return
+      'Cannot connect to SHIFT Cloud. Check your Wi-Fi or mobile-data connection, '
+      'then reopen AI History to retrieve the saved job. Do not repeat Run SHIFT AI.';
     if(raw.contains('provider_timeout'))return
       'The NVIDIA model took too long to respond. Try a shorter request or retry. '
       'Your API key and model selection have not been changed.';
@@ -139,27 +142,65 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
     }catch(e){if(mounted)setState(()=>message=displayAiError(e));}
     finally{if(mounted)setState(()=>loading=false);}
   }
+  // Network and DNS failures are not model failures. Never submit another
+  // generation request merely because status polling temporarily disconnects.
+  bool isTransientConnectionError(Object error){
+    final value=error.toString().toLowerCase();
+    return value.contains('socketexception')||
+      value.contains('failed host lookup')||
+      value.contains('connection reset')||
+      value.contains('connection refused')||
+      value.contains('connection timed out')||
+      value.contains('network is unreachable')||
+      value.contains('functionsfetch')||
+      value.contains('connection closed before full header')||
+      value.contains('clientexception')||
+      value.contains('handshakeexception');
+  }
   Future<void> waitForJob(String jobId)async{
-    // Poll one existing cloud job: never create a second NVIDIA request.
-    for(var attempt=0;attempt<28;attempt++){
-      await Future<void>.delayed(const Duration(seconds:4));
+    var connectionFailures=0;
+    // This only checks an existing persisted job; it never creates another
+    // NVIDIA request and cannot duplicate provider charges.
+    for(var attempt=0;attempt<36;attempt++){
+      await Future<void>.delayed(Duration(seconds:connectionFailures>0?6:4));
       if(!mounted)return;
-      final current=await action('job_status',{'jobId':jobId});
+      Map<String,dynamic> current;
+      try{
+        current=await action('job_status',{'jobId':jobId});
+        connectionFailures=0;
+        if(mounted&&progress.contains('Connection interrupted')){
+          setState(()=>progress='Connected. Checking the saved AI job…');
+        }
+      }catch(e){
+        if(!isTransientConnectionError(e))rethrow;
+        connectionFailures++;
+        if(mounted)setState(()=>progress='Connection interrupted. '
+          'Reconnecting to the saved AI job ($connectionFailures)…');
+        if(connectionFailures>=6){
+          if(mounted)setState(()=>progress='Unable to check the AI job right now. '
+            'The saved job remains in SHIFT Cloud. Reconnect and check AI History; '
+            'do not submit the same request again.');
+          return;
+        }
+        continue;
+      }
       final state=current['status']?.toString();
       if(state=='completed'&&current['result'] is Map){
         setState((){
           output=Map<String,dynamic>.from(current['result'] as Map);
           progress='';
         });
-        await refresh();
+        // A history refresh is optional; it must not hide a successful result
+        // if connectivity fails again after the job completed.
+        try{await refresh();}catch(_){/* result already shown */}
         return;
       }
       if(state=='failed')throw StateError(current['error']?.toString()??'ai_failed');
       if(state=='completed')throw StateError('AI returned no usable result.');
     }
     if(mounted){
-      setState(()=>progress='Still processing. This job is saved in AI history. '
-        'Use Refresh to check it later.');
+      setState(()=>progress='This job is saved in SHIFT Cloud. '
+        'Check AI History for its result later; do not submit it again.');
     }
   }
   Future<void> run()async{
