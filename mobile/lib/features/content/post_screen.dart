@@ -98,7 +98,7 @@ class PostScreen extends ConsumerWidget {
         Text('Destination preview: ${v.platform}\nConnected account: selected during scheduling\nPublishing mode: ${w.preferences['mode'] ?? 'Approval required'}'),
         const SizedBox(height: 8),
         Text(p.plannedAt == null ? 'No local planning date' : 'Local planning date: ${DateFormat.yMMMd().add_jm().format(p.plannedAt!)}\nDevice timezone: ${p.timezone}\nUTC: ${p.plannedAt!.toUtc().toIso8601String()}'),
-        const SizedBox(height: 8), const Text('Local planning dates do not trigger publishing. Scheduling with Supabase is a separate action after cloud approval and account connection. Postiz is preserved for later.', style: TextStyle(fontSize: 12)),
+        const SizedBox(height: 8), const Text('Local planning dates do not trigger publishing. Scheduling with SHIFT is a separate action after cloud approval and account connection. Postiz is preserved for later.', style: TextStyle(fontSize: 12)),
       ])),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
