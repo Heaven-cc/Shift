@@ -193,6 +193,7 @@ Deno.serve(async (req:Request)=>{
      try{
      const providerKey=candidate.key,providerModel=candidate.model;
      const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
+      const isGlm53=provider==="nvidia"&&providerModel==="z-ai/glm-5.3";
      const response=await fetch(endpoint,{
       method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(29000)]),
       headers:{"authorization":`Bearer ${providerKey}`,
@@ -201,7 +202,7 @@ Deno.serve(async (req:Request)=>{
       body:JSON.stringify({
         model:providerModel,stream:isMistral4,
         ...(provider==="openai"?{max_completion_tokens:1100}:{max_tokens:1100}),
-        ...(isMistral4?{reasoning_effort:"low"}:{}),
+        ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
         messages:[
           {role:"system",content:safety},
           {role:"user",content:context+
