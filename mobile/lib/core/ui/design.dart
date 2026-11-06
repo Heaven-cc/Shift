@@ -100,7 +100,7 @@ String shiftFriendlyError(Object? error) {
 }
 
 Future<void> showShiftError(BuildContext context, Object? error,
-    {String title = 'Could not complete request'}) async {
+    {String title = 'Could not complete request', VoidCallback? onRetry}) async {
   if (!context.mounted) return;
   final description = shiftFriendlyError(error);
   await showDialog<void>(
@@ -112,6 +112,10 @@ Future<void> showShiftError(BuildContext context, Object? error,
       content: Text(description, textAlign: TextAlign.center),
       actionsAlignment: MainAxisAlignment.center,
       actions: [
+        if (onRetry != null) TextButton(
+          onPressed: () { Navigator.pop(dialogContext); onRetry(); },
+          child: const Text('Retry'),
+        ),
         FilledButton(
           onPressed: () => Navigator.pop(dialogContext),
           child: const Text('Got it'),
@@ -123,9 +127,10 @@ Future<void> showShiftError(BuildContext context, Object? error,
 
 // When older screens provide an inline error, show it once as a dialog instead.
 class ShiftErrorNotice extends StatefulWidget {
-  const ShiftErrorNotice(this.error, {super.key, this.title = 'Could not complete request'});
+  const ShiftErrorNotice(this.error, {super.key, this.title = 'Could not complete request', this.onRetry});
   final String? error;
   final String title;
+  final VoidCallback? onRetry;
   @override State<ShiftErrorNotice> createState() => _ShiftErrorNoticeState();
 }
 class _ShiftErrorNoticeState extends State<ShiftErrorNotice> {
@@ -140,7 +145,7 @@ class _ShiftErrorNoticeState extends State<ShiftErrorNotice> {
     if (error == null || error.trim().isEmpty || error == lastShown) return;
     lastShown = error;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) showShiftError(context, error, title: widget.title);
+      if (mounted) showShiftError(context, error, title: widget.title, onRetry: widget.onRetry);
     });
   }
   @override Widget build(BuildContext context) => const SizedBox.shrink();
