@@ -105,12 +105,13 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
  }
  const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
+ const isGlm53=c.provider==="nvidia"&&c.model==="z-ai/glm-5.3";
  const useStream=isMistral4;
  const tokens=isMistral4?1100:1800;
  const payload={
   model:c.model,stream:useStream,
   ...(c.provider==="openai"?{max_completion_tokens:tokens}:{max_tokens:tokens}),
-  ...(isMistral4?{reasoning_effort:"low"}:{}),
+  ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
   messages:[{role:"system",content:system},{role:"user",content:prompt}]
  };
  const controller=new AbortController();
