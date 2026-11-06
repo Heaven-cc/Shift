@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import '../cloud/shift_cloud.dart';
 import '../domain/models.dart';
 import 'postiz_bridge.dart';
