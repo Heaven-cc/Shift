@@ -7,22 +7,14 @@ const headers={"Content-Type":"application/json","Cache-Control":"no-store","Acc
 const reply=(x:any,status=200)=>new Response(JSON.stringify(x),{status,headers});
 const admin=()=>createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false}});
 const platforms=new Set(["Instagram","Facebook","TikTok","LinkedIn","X","Threads","YouTube","Bluesky","Pinterest"]);
+// Use one fixed NVIDIA Mistral endpoint, as Angel uses one Groq endpoint.
+// Model and endpoint are public identifiers; the API credential stays secret.
+const MISTRAL_ENDPOINT="https://integrate.api.nvidia.com/v1/chat/completions";
+const MISTRAL_MODEL="mistralai/mistral-large-4-1t-a52b";
 function settings(){
- const provider=(env("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
- const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
- const available=roles.map(role=>({
-  key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
-  model:env("SHIFT_NVIDIA_"+role+"_MODEL")
- })).find(x=>x.key&&x.model);
- const key=provider==="nvidia"?(available?.key||""):env("SHIFT_AI_API_KEY");
- const model=provider==="nvidia"?(available?.model||""):env("SHIFT_AI_MODEL");
- const urls:Record<string,string>={openai:"https://api.openai.com/v1/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",nvidia:"https://integrate.api.nvidia.com/v1/chat/completions"};
- let url=urls[provider]||"";
- if(provider==="openai-compatible"){
-  try{const u=new URL(env("SHIFT_AI_BASE_URL"));if(u.protocol==="https:"&&!u.username&&!u.password&&!u.hash&&!/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(u.hostname)&&!/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname))url=u.toString();}catch{}
- }
- return {provider,key,model,url,configured:!!(provider&&key&&model&&url)};
+ const key=env("SHIFT_NVIDIA_MISTRAL_API_KEY")||env("SHIFT_NVIDIA_API_KEY");
+ return {provider:"nvidia",key,model:MISTRAL_MODEL,url:MISTRAL_ENDPOINT,
+  configured:!!key};
 }
 async function identity(req:Request){
  const token=req.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -50,143 +42,60 @@ async function search(q:string,key:string){
  for(const x of data.web?.results||[]){try{const u=new URL(x.url);if(u.protocol!=="https:"||u.username||u.password||out.some(y=>y.url===u.toString()))continue;out.push({url:u.toString(),title:clean(x.title,200),summary:clean(x.description,500),publisher:u.hostname})}catch{}if(out.length>=8)break}
  return out;
 }
-async function readNvidiaSse(response:Response){
- if(!response.body)throw Error("provider_invalid_response");
- const reader=response.body.getReader(),decoder=new TextDecoder();
- let buffer="",text="",frames=0,first=false,finished=false;
+// Direct, non-streaming JSON request. No provider switching, GLM fallback
+// or SSE parser; this follows the working NVIDIA Build request contract.
+async function modelCallWithFallback(
+ c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean
+){
+ if(!c.configured)throw Error("ai_provider_not_configured");
+ // Browser research is handled separately by the configured search service.
+ if(withWeb)throw Error("research_provider_not_configured");
+ const started=Date.now(),controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),120000);
  try{
-  while(true){
-   const {done,value}=await reader.read();
-   if(done)break;
-   if(!value)continue;
-   buffer+=decoder.decode(value,{stream:true});
-   buffer=buffer.replace(/\r\n/g,"\n");
-   if(buffer.length>128000)throw Error("provider_invalid_response");
-   // SSE fields may span TCP chunks and use CRLF.
-   let marker=buffer.indexOf("\n\n");
-   while(marker>=0){
-    const frame=buffer.slice(0,marker);
-    buffer=buffer.slice(marker+2);
-    const lines=frame.split("\n").filter(x=>x.startsWith("data:"));
-    for(const line of lines){
-     const raw=line.slice(5).trim();
-     if(raw==="[DONE]"){finished=true;break;}
-     if(!raw)continue;
-     let event:any;try{event=JSON.parse(raw)}catch{throw Error("provider_invalid_response")}
-     if(event.error)throw Error("provider_upstream_error");
-     const delta=event.choices?.[0]?.delta;
-     if(typeof delta?.content==="string"){text+=delta.content;first=true;}
-     if(text.length>20000)throw Error("provider_response_too_large");
-     frames++;
-    }
-    if(finished)break;
-    marker=buffer.indexOf("\n\n");
-   }
-   if(finished)break;
-  }
- }catch(e){
-  if(e instanceof Error&&["AbortError","TimeoutError"].includes(e.name))
-   throw Error("provider_timeout");
-  throw e;
- }finally{
-  // Cancels a stalled connection if a terminal frame arrived.
-  if(finished){try{await reader.cancel()}catch{/* cleanup */}}
- }
- if(!first||!text.trim())throw Error("provider_empty_response");
- if(!finished)throw Error("provider_incomplete_stream");
- return clean(text,16000);
-}
-async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean,timeoutMs:number){
- if(withWeb&&c.provider==="openai"){
-  const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,tools:[{type:"web_search"}],tool_choice:"required",input:[{role:"system",content:system},{role:"user",content:prompt}],max_output_tokens:1800})});
-  if(!r.ok)throw Error("provider_unavailable");
-  const d=await r.json(),parts:(any[])=(d.output||[]).filter((x:any)=>x.type==="message").flatMap((x:any)=>x.content||[]),sources:any[]=[];
-  for(const p of parts)for(const a of (p.annotations||[])){if(a.type!=="url_citation")continue;try{const u=new URL(a.url);if(u.protocol==="https:"&&!sources.some(x=>x.url===u.toString()))sources.push({url:u.toString(),title:clean(a.title,200),summary:"Web search citation",publisher:u.hostname})}catch{}}
-  return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
- }
- const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
- const isGlm53=c.provider==="nvidia"&&c.model==="z-ai/glm-5.3";
- const useStream=isMistral4||isGlm53;
- const tokens=isMistral4?1100:isGlm53?1200:1800;
- const payload={
-  model:c.model,stream:useStream,
-  ...(c.provider==="openai"?{max_completion_tokens:tokens}:{max_tokens:tokens}),
-  ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
-  messages:[{role:"system",content:system},{role:"user",content:prompt}]
- };
- const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),timeoutMs);
- try{
-  const started=Date.now();
-  const response=await fetch(c.url,{method:"POST",signal:controller.signal,
-   headers:{"Content-Type":"application/json",
-     "Accept":useStream?"text/event-stream":"application/json",
-     "Authorization":"Bearer "+c.key},
-   body:JSON.stringify(payload)});
+  console.info("SHIFT AI Mistral request started");
+  const response=await fetch(MISTRAL_ENDPOINT,{
+   method:"POST",signal:controller.signal,
+   headers:{"Authorization":"Bearer "+c.key,"Content-Type":"application/json",
+    "Accept":"application/json"},
+   body:JSON.stringify({
+    model:MISTRAL_MODEL,stream:false,max_tokens:4096,
+    reasoning_effort:"none",
+    messages:[{role:"system",content:system},{role:"user",content:prompt}]
+   })
+  });
+  console.info("SHIFT AI Mistral HTTP result",{
+   status:response.status,elapsedMs:Date.now()-started
+  });
   if(!response.ok){
-   // Log only the routing role and status, never credentials or prompts.
-   console.warn("SHIFT AI upstream rejected request",{
-    modelRole:isGlm53?"glm":isMistral4?"mistral4":"other",status:response.status,elapsedMs:Date.now()-started});
-   if(response.status===401||response.status===403)throw Error("provider_credentials_rejected");
+   if([401,403].includes(response.status))throw Error("provider_credentials_rejected");
+   if(response.status===402)throw Error("provider_quota_exhausted");
    if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
    if(response.status===429)throw Error("provider_rate_limited");
    if(response.status>=500)throw Error("provider_upstream_error");
    throw Error("provider_unavailable");
   }
-  let content="";
-  if(useStream){
-   const contentType=response.headers.get("content-type")??"";
-   if(!contentType.includes("text/event-stream"))throw Error("provider_invalid_response");
-   content=await readNvidiaSse(response);
-  }else{
-   let d:any;try{d=await response.json()}catch{throw Error("provider_invalid_response")}
-   const raw=d.choices?.[0]?.message?.content;
-   content=typeof raw==="string"?raw:Array.isArray(raw)?
-    raw.map((p:any)=>clean(p.text,16000)).join("\n"):"";
+  let data:any;
+  try{data=await response.json()}catch{throw Error("provider_invalid_response")}
+  const message=data?.choices?.[0]?.message;
+  const value=message?.content;
+  const content=typeof value==="string"?value:
+   Array.isArray(value)?value.map((part:any)=>typeof part?.text==="string"?part.text:"").join("\n"):"";
+  if(!content.trim()){
+   console.warn("SHIFT AI Mistral response had no visible content",{
+    hasReasoning:!!message?.reasoning_content,
+    finishReason:data?.choices?.[0]?.finish_reason??"unknown"
+   });
+   throw Error("provider_empty_response");
   }
-  if(!content.trim())throw Error("provider_empty_response");
-  console.info("SHIFT AI provider response completed",{provider:c.provider,
-   modelRole:isGlm53?"glm":isMistral4?"mistral4":"other",elapsedMs:Date.now()-started});
-  return {text:clean(content,16000),sources:[]};
+  console.info("SHIFT AI Mistral completed",{elapsedMs:Date.now()-started});
+  return {text:clean(content,16000),sources:[] as any[]};
  }catch(error){
   if(error instanceof Error&&["AbortError","TimeoutError"].includes(error.name))
    throw Error("provider_timeout");
   if(error instanceof Error&&error.message.startsWith("provider_"))throw error;
   throw Error("provider_network_error");
- }finally{clearTimeout(timeout)}
-}
-// Try each independently configured text model without asking the user to choose.
-async function modelCallWithFallback(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean){
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
- const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
- const options=c.provider==="nvidia"?roles.map(role=>({
-   ...c,key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
-   model:env("SHIFT_NVIDIA_"+role+"_MODEL")
- })).filter(x=>x.key&&x.model):[c];
- const deadline=Date.now()+120000;
- let previous:unknown;
- for(let index=0;index<options.length;index++){
-  const option=options[index];
-  // Share 120 seconds across all configured models, including fallback.
-  const remaining=Math.max(0,deadline-Date.now()-1500);
-  const attemptMs=Math.floor(remaining/(options.length-index));
-  if(attemptMs<1000)throw previous??Error("provider_timeout");
-  const modelRole=option.model===env("SHIFT_NVIDIA_GLM_MODEL")&&c.provider==="nvidia"?"glm":
-    option.model===env("SHIFT_NVIDIA_MISTRAL_MODEL")&&c.provider==="nvidia"?"mistral":"other";
-  const started=Date.now();
-  console.info("SHIFT AI model attempt started",{modelRole});
-  try{return await modelCall(option,system,prompt,withWeb,attemptMs)}
-  catch(error){
-   previous=error;
-   const reason=error instanceof Error?error.message:"";
-   console.warn("SHIFT AI model attempt failed",{modelRole,errorCode:reason.startsWith("provider_")?reason:"ai_failed",elapsedMs:Date.now()-started});
-   if(!["provider_timeout","provider_rate_limited","provider_unavailable",
-     "provider_upstream_error","provider_network_error","provider_model_or_request_invalid",
-     "provider_invalid_response","provider_empty_response","provider_incomplete_stream"].includes(reason))
-     throw error;
-  }
- }
- throw previous??Error("provider_unavailable");
+ }finally{clearTimeout(timer)}
 }
 async function handler(req:Request){
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers});
@@ -221,7 +130,7 @@ async function handler(req:Request){
  const mode=clean(body.mode,30),prompt=clean(body.prompt,1500),key=clean(body.requestKey,150);
  if(!["research","competitors","analyze","ideas","strategy","calendar","improve"].includes(mode)||prompt.length<5||!/^shift-workspace-[\w-]{8,120}$/.test(key))return reply({error:"invalid_request"},400);
  const web=mode==="research"||mode==="competitors",searchKey=env("SHIFT_BRAVE_SEARCH_API_KEY");
- if(web&&!searchKey&&cfg.provider!=="openai")return reply({error:"research_provider_not_configured"},503);
+ if(web&&!searchKey)return reply({error:"research_provider_not_configured"},503);
  const original=mode+": "+prompt;
  const {data:jobId,error:reqError}=await a.caller.rpc("shift_request_text_generation",{p_request_key:key,p_prompt:original});
  if(reqError)return reply({error:reqError.code==="53300"?"generation_limit_reached":"request_rejected"},429);
@@ -270,7 +179,7 @@ async function handler(req:Request){
   const m=e instanceof Error?e.message:"ai_failed";
   const safe=["blocked_topic","provider_unavailable","provider_timeout",
    "provider_network_error","provider_credentials_rejected","provider_model_or_request_invalid",
-   "provider_rate_limited","provider_upstream_error","provider_invalid_response",
+   "provider_rate_limited","provider_quota_exhausted","provider_upstream_error","provider_invalid_response",
    "provider_empty_response","provider_incomplete_stream","provider_response_too_large","search_unavailable","invalid_model_output","invalid_calendar",
    "plan_storage_failed","storage_error"].includes(m)?m:"ai_failed";
   console.error("SHIFT AI generation failure",{jobId,code:safe,provider:cfg.provider});
