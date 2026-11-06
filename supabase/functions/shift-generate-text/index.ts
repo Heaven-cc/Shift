@@ -22,9 +22,9 @@ Deno.serve(async (req:Request)=>{
   const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   // All new SHIFT AI calls share a backend-only, explicitly selected provider.
   // Do not infer a default from the older Groq integration.
-  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")??"").toLowerCase();
-  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
-  const roles=selected==="KIMI"?["KIMI","MISTRAL"]:["MISTRAL","KIMI"];
+  const provider=(Deno.env.get("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
+  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+  const roles=selected==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
   const aiCandidates=provider==="nvidia"?
     roles.map(role=>({
       key:Deno.env.get("SHIFT_NVIDIA_"+role+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY")||"",
