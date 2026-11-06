@@ -109,30 +109,23 @@ async function handler(req:Request){
   for(const item of data??[]){
     const {data:signed}=await actor.db.storage.from("shift-media")
       .createSignedUrl(item.storage_path,600);
-    items.push({id:item.id,modelId:item.model_slot,model:item.model_id,
+    items.push({id:item.id,
       type:item.media_type,prompt:item.prompt,createdAt:item.created_at,
       path:item.storage_path,url:signed?.signedUrl??null});
   }
   return reply({items});
  }
- if(action==="status")return reply({models:slots.map(s=>{
-  const c=config(s);return {id:s.id,label:s.label,type:s.type,hint:s.hint,model:c.model||null,
-   configured:c.configured,endpointConfigured:!!c.endpoint,protocol:c.protocol,
-   state:c.configured?"configured_not_tested":"needs_configuration"};
- }),keyLocation:"Supabase Edge Function secrets",tested:false});
- const slot=slots.find(x=>x.id===clean(body.modelId,35));
- if(!slot)return reply({error:"unknown_model"},400);
- const c=config(slot);
- if(!c.configured)return reply({error:"model_not_configured"},503);
- if(action==="test"){
-  // Readiness check validates trusted backend configuration only;
-  // no provider quota is consumed or real inference claimed.
-  return reply({configured:true,model:c.model,endpointConfigured:true,verified:false});
+ if(action==="status"){
+  const active=slots.filter(slot=>slot.type!=="text"&&config(slot).configured);
+  return reply({name:"SHIFT AI",availableTypes:[...new Set(active.map(slot=>slot.type))],
+    configured:active.length>0,tested:false});
  }
- if(!((action==="generate_image"&&slot.type==="image")||
-   (action==="edit_image"&&slot.type==="image_edit")||
-   (action==="synthesize_voice"&&slot.type==="voice")))
-  return reply({error:"unsupported_action_for_model"},400);
+ const category:Category=action==="generate_image"?"image":
+   action==="edit_image"?"image_edit":action==="synthesize_voice"?"voice":"text";
+ if(category==="text")return reply({error:"unknown_action"},400);
+ // Model identities are internal. Only configured endpoints are eligible.
+ const candidates=slots.filter(slot=>slot.type===category&&config(slot).configured);
+ if(!candidates.length)return reply({error:"media_not_configured"},503);
  const prompt=clean(body.prompt,1300);
  if(prompt.length<5)return reply({error:"invalid_prompt"},400);
  const {data:brand}=await actor.db.from("shift_brands")
@@ -145,14 +138,17 @@ async function handler(req:Request){
    "Brand rules: "+clean(brand.guidelines,350)
  ].filter(Boolean).join("; "):"";
  // Voice is spoken verbatim: do not synthesize private brand instructions.
- const mediaPrompt=slot.type==="voice"?prompt:
+ const mediaPrompt=category==="voice"?prompt:
    (brandContext?prompt+"\nBrand context: "+brandContext:prompt).slice(0,2200);
  const {data:allowed,error:rateError}=await actor.db.rpc("shift_ai_allow_request",{
   p_user:actor.uid,p_workspace:actor.wid,p_category:"image"});
  if(rateError||allowed!==true)return reply({error:"media_generation_limit_reached"},429);
+ let lastError="model_error";
+ for(const slot of candidates){
+  const c=config(slot);
  try{
   let response:Response;
-  if(slot.type==="voice"){
+  if(category==="voice"){
    const locale=clean(body.language,20)||"en-US",voice=clean(body.voice,100)||"Magpie-Multilingual.EN-US.Aria";
    if(!/^[a-z]{2,3}-[A-Z]{2}$/.test(locale)||!/^[\w.-]{3,100}$/.test(voice))return reply({error:"invalid_voice"},400);
    const form=new FormData();
@@ -170,7 +166,7 @@ async function handler(req:Request){
     workspace_id:actor.wid,user_id:actor.uid,model_slot:slot.id,
     model_id:c.model,media_type:"voice",prompt,storage_path:saved.path,mime_type:"audio/wav"});
    if(historyError)throw Error("media_history_failed");
-   return reply({type:"voice",modelId:slot.id,model:c.model,...saved});
+   return reply({type:"voice",...saved});
   }
   let source:string|undefined;
   if(action==="edit_image"){
@@ -205,15 +201,21 @@ async function handler(req:Request){
    model_id:c.model,media_type:slot.type,prompt,storage_path:saved.path,
    mime_type:format.mime});
   if(historyError)throw Error("media_history_failed");
-  return reply({type:slot.type,modelId:slot.id,model:c.model,...saved});
+  return reply({type:category,...saved});
  }catch(e){
   const code=e instanceof Error?e.message:"model_error";
   const safe=["nvidia_rate_limited","nvidia_credentials_rejected","nvidia_request_failed",
    "media_too_large","invalid_media_output","image_protocol_unavailable",
    "unsupported_image_format","unexpected_audio_response","source_not_found","source_too_large",
    "media_storage_failed","media_link_failed","invalid_source_image","media_history_failed"].includes(code)?code:"model_error";
-  return reply({error:safe},safe==="nvidia_rate_limited"?429:502);
+  lastError=safe;
+  // Retry transient provider failures against the next configured model only.
+  if(!["nvidia_rate_limited","nvidia_request_failed","model_error",
+        "image_protocol_unavailable","unexpected_audio_response"].includes(safe))
+    return reply({error:safe},502);
  }
+ }
+ return reply({error:lastError},lastError==="nvidia_rate_limited"?429:502);
 }
 Deno.serve(async req=>{try{return await handler(req)}catch(e){
  const code=e instanceof Error&&e.message==="unauthorized"?"unauthorized":"request_failed";
