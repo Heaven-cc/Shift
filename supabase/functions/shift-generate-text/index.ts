@@ -125,7 +125,6 @@ Deno.serve(async (req:Request)=>{
 
   const generate=async():Promise<Response>=>{
   const controller=new AbortController();
-  const generationDeadline=Date.now()+120000;
   const deadline=setTimeout(()=>controller.abort(),120000);
   try {
     const safety=[
