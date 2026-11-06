@@ -66,7 +66,17 @@ class ServiceNotice extends StatelessWidget {
 }
 
 String shiftFriendlyError(Object? error) {
-  final raw = (error ?? '').toString().toLowerCase();
+  final detail = (error ?? '').toString().trim();
+  final raw = detail.toLowerCase();
+  // Preserve only short, locally authored validation guidance, never raw
+  // service exceptions, identifiers, URLs or provider responses.
+  if (detail.length <= 160 &&
+      RegExp(r'^(sign in to|choose |enter |select |approve this|write or generate)')
+        .hasMatch(raw) &&
+      !RegExp(r'(exception|supabase|provider_|api key|https?://|\\{)')
+        .hasMatch(raw)) {
+    return detail;
+  }
   if (raw.contains('provider_timeout') || raw.contains('timed out') ||
       raw.contains('timeoutexception')) {
     return 'This request is taking longer than expected. Check your saved activity before trying again.';
@@ -153,7 +163,11 @@ class _ShiftErrorNoticeState extends State<ShiftErrorNotice> {
 
 bool _shiftLooksLikeError(String message) {
   final m = message.toLowerCase();
-  return m.contains('failed') || m.contains('could not') ||
+  return m.startsWith('sign in to') || m.startsWith('choose ') ||
+      m.startsWith('enter ') || m.startsWith('select ') ||
+      m.startsWith('approve this') ||
+      m.contains('unavailable') ||
+      m.contains('failed') || m.contains('could not') ||
       m.contains('unable to') || m.contains('error') ||
       m.contains('not configured') || m.contains('timed out') ||
       m.contains('rejected') || m.contains('cannot connect') ||
