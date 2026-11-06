@@ -9,7 +9,7 @@ const admin=()=>createClient(env("SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"
 const platforms=new Set(["Instagram","Facebook","TikTok","LinkedIn","X","Threads","YouTube","Bluesky","Pinterest"]);
 function settings(){
  const provider=(env("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+ const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
  const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
  const available=roles.map(role=>({
   key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
@@ -106,8 +106,8 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
  }
  const isMistral4=c.provider==="nvidia"&&c.model==="mistralai/mistral-large-4-1t-a52b";
  const isGlm53=c.provider==="nvidia"&&c.model==="z-ai/glm-5.3";
- const useStream=isMistral4;
- const tokens=isMistral4?1100:1800;
+ const useStream=isMistral4||isGlm53;
+ const tokens=isMistral4?1100:isGlm53?1200:1800;
  const payload={
   model:c.model,stream:useStream,
   ...(c.provider==="openai"?{max_completion_tokens:tokens}:{max_tokens:tokens}),
@@ -115,7 +115,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   messages:[{role:"system",content:system},{role:"user",content:prompt}]
  };
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),40000);
+ const timeout=setTimeout(()=>controller.abort(),33000);
  try{
   const started=Date.now();
   const response=await fetch(c.url,{method:"POST",signal:controller.signal,
@@ -124,9 +124,9 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
      "Authorization":"Bearer "+c.key},
    body:JSON.stringify(payload)});
   if(!response.ok){
-   // Log HTTP status and request latency, never raw provider payload or credentials.
-   console.warn("SHIFT NVIDIA upstream rejected request",{
-    provider:c.provider,status:response.status,elapsedMs:Date.now()-started});
+   // Log only the routing role and status, never credentials or prompts.
+   console.warn("SHIFT AI upstream rejected request",{
+    modelRole:isGlm53?"glm":isMistral4?"mistral4":"other",status:response.status,elapsedMs:Date.now()-started});
    if(response.status===401||response.status===403)throw Error("provider_credentials_rejected");
    if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
    if(response.status===429)throw Error("provider_rate_limited");
@@ -146,7 +146,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   }
   if(!content.trim())throw Error("provider_empty_response");
   console.info("SHIFT AI provider response completed",{provider:c.provider,
-   modelRole:isMistral4?"mistral4":"other",elapsedMs:Date.now()-started});
+   modelRole:isGlm53?"glm":isMistral4?"mistral4":"other",elapsedMs:Date.now()-started});
   return {text:clean(content,16000),sources:[]};
  }catch(error){
   if(error instanceof Error&&["AbortError","TimeoutError"].includes(error.name))
@@ -165,10 +165,15 @@ async function modelCallWithFallback(c:ReturnType<typeof settings>,system:string
  })).filter(x=>x.key&&x.model):[c];
  let previous:unknown;
  for(const option of options){
+  const modelRole=option.model===env("SHIFT_NVIDIA_GLM_MODEL")&&c.provider==="nvidia"?"glm":
+    option.model===env("SHIFT_NVIDIA_MISTRAL_MODEL")&&c.provider==="nvidia"?"mistral":"other";
+  const started=Date.now();
+  console.info("SHIFT AI model attempt started",{modelRole});
   try{return await modelCall(option,system,prompt,withWeb)}
   catch(error){
    previous=error;
    const reason=error instanceof Error?error.message:"";
+   console.warn("SHIFT AI model attempt failed",{modelRole,errorCode:reason.startsWith("provider_")?reason:"ai_failed",elapsedMs:Date.now()-started});
    if(!["provider_timeout","provider_rate_limited","provider_unavailable",
      "provider_upstream_error","provider_network_error","provider_model_or_request_invalid",
      "provider_invalid_response","provider_empty_response","provider_incomplete_stream"].includes(reason))
