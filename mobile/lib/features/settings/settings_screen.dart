@@ -24,19 +24,32 @@ class SettingsScreen extends ConsumerWidget {
       if (section == null) ...[
         Heading(w.brand['name'] ?? 'Make SHIFT yours.', 'A workspace that sounds like you.'),
         const ServiceNotice(),
-        ...[
-          ('Profile', 'Name, language and timezone', Icons.person_outline, '/settings/profile'),
-          ('Brand identity', 'Audience, voice and guidelines', Icons.fingerprint, '/settings/brand'),
-          ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
-          ('AI preferences', 'Style, research and images', Icons.auto_awesome_outlined, '/settings/ai'),
-          ('SHIFT AI Workspace', 'Brand research, ideas, strategy and content plans', Icons.psychology_outlined, '/ai-workspace'),
-          ('Automation', 'Rules, limits and posting windows', Icons.bolt_outlined, '/automation'),
-          ('Approvals', 'Review your drafts and cloud content', Icons.fact_check_outlined, '/approvals'),
-          ('Appearance', 'Light, dark or system', Icons.contrast, '/settings/appearance'),
-          ('Notifications', 'Choose what reaches you', Icons.notifications_outlined, '/settings/notifications'),
-          ('Privacy & security', 'Data controls and sessions', Icons.lock_outline, '/settings/privacy'),
-          ('Help & support', 'FAQ and application information', Icons.help_outline, '/settings/help'),
-        ].map((r) => ListTile(contentPadding: EdgeInsets.zero, leading: Icon(r.$3), title: Text(r.$1), subtitle: Text(r.$2), trailing: const Icon(Icons.chevron_right), onTap: () => context.push(r.$4))),
+        Panel(child: Column(children: [
+          for (final r in [
+            ('Profile', 'Name, language and timezone', Icons.person_outline, '/settings/profile'),
+            ('Brand identity', 'Audience, voice and guidelines', Icons.fingerprint, '/settings/brand'),
+            ('Social accounts', 'Connections and permissions', Icons.link, '/accounts'),
+            ('AI preferences', 'Style, research and images', Icons.auto_awesome_outlined, '/settings/ai'),
+            ('SHIFT AI Workspace', 'Brand research, ideas and content plans', Icons.psychology_outlined, '/ai-workspace'),
+            ('Automation', 'Rules, limits and posting windows', Icons.bolt_outlined, '/automation'),
+            ('Approvals', 'Review drafts and queued posts', Icons.fact_check_outlined, '/approvals'),
+            ('Appearance', 'Light, dark or system', Icons.contrast, '/settings/appearance'),
+            ('Notifications', 'Choose what reaches you', Icons.notifications_outlined, '/settings/notifications'),
+            ('Privacy & security', 'Data controls and sessions', Icons.lock_outline, '/settings/privacy'),
+            ('Help & support', 'FAQ and application information', Icons.help_outline, '/settings/help'),
+          ]) ...[
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(r.$3, size: 22),
+              title: Text(r.$1),
+              subtitle: Text(r.$2, maxLines: 2),
+              trailing: const Icon(Icons.chevron_right, size: 20),
+              onTap: () => context.push(r.$4),
+            ),
+            if (r.$4 != '/settings/help') const Divider(height: 1),
+          ],
+        ])),
       ],
       if (section == 'appearance') ...[
         const Heading('Your kind of clarity.', 'Choose a theme. System follows your device.'),
@@ -52,7 +65,7 @@ class SettingsScreen extends ConsumerWidget {
       ],
       if (section == 'privacy') ...[
         const Heading('You stay in control.', 'Your local workspace and account data.'),
-        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT Cloud. Profile, brand preferences, drafts and supported private images sync to Supabase. Offline drafts are imported only when you choose to import them.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
+        Panel(child: Text(w.cloudAuthenticated ? 'Signed in to SHIFT. Profile, brand preferences, drafts and supported private images sync securely with SHIFT. Offline drafts are imported only when you choose to import them.' : 'Local workspace: content is stored on this device and is not a cloud backup.')),
         const Section('Sessions & permissions'),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Session'), subtitle: Text(w.cloudAuthenticated ? 'Signed in: ${ShiftCloud.user?.email ?? 'SHIFT account'}' : 'Local workspace only')),
         ListTile(contentPadding: EdgeInsets.zero, title: const Text('Connected app permissions'), trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
@@ -83,8 +96,8 @@ class SettingsScreen extends ConsumerWidget {
       ],
       if (section == 'help') ...[
         const Heading('A little help,\nwhen you need it.', 'SHIFT • Frontend edition 0.2.0'),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Yes, for approved posts scheduled to connected supported accounts. Supabase Cron checks the queue every minute even when SHIFT is closed. Local planning dates alone do not publish posts. Autonomous AI content creation remains paused.'))]),
-        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('When signed into SHIFT Cloud, drafts, version history, settings and uploaded draft images sync to Supabase. Offline work remains on this device and must be explicitly imported. A local planning date is not a publishing schedule.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Does SHIFT publish while closed?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Yes, for approved posts scheduled to connected supported accounts. SHIFT Scheduler checks the queue every minute even when SHIFT is closed. Local planning dates alone do not publish posts. Autonomous AI content creation remains paused.'))]),
+        const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Where are my drafts?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('When signed into SHIFT Cloud, drafts, version history, settings and uploaded draft images sync securely with SHIFT. Offline work remains on this device and must be explicitly imported. A local planning date is not a publishing schedule.'))]),
         const ExpansionTile(tilePadding: EdgeInsets.zero, title: Text('Which accounts can I connect?'), children: [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Bluesky direct account linking is implemented through a dedicated app password. Instagram, Facebook and other platforms still require OAuth developer credentials and publishing adapters. Postiz integration is preserved for VPS hosting.'))]),
         const SizedBox(height: 20), const Panel(child: Text('Support contact has not been configured. No support message is sent from this edition.')),
         const SizedBox(height: 12), OutlinedButton(onPressed: () => showAboutDialog(context: context, applicationName: 'SHIFT', applicationVersion: '0.2.0', applicationIcon: const Icon(Icons.bolt, size: 40), children: [const Text('Your AI social media manager. Native Flutter frontend for Android and iOS.')]), child: const Text('About SHIFT & licenses')),
@@ -262,7 +275,7 @@ class AccountsScreen extends StatelessWidget {
     body: PageBody(children: [
       const Heading('Your presence.\nOne workspace.', 'Manage destinations and prepare official account connections.'),
       const ServiceNotice(
-        text: 'Supabase Cron is the current scheduling backend. Postiz is preserved for VPS hosting later. Only verified connected platforms can publish.',
+        text: 'SHIFT Scheduler is the current scheduling backend. Postiz is preserved for VPS hosting later. Only verified connected platforms can publish.',
       ),
       const DirectConnectionsPanel(),
       const Section('Social destinations'),
@@ -286,7 +299,7 @@ class AccountsScreen extends StatelessWidget {
             Text(platform.publishingNote),
             const SizedBox(height: 8),
             Text(platform.id == 'bluesky'
-                ? 'Live connection status appears in the Supabase panel above.'
+                ? 'Live connection status appears in the SHIFT connections above.'
                 : 'Direct OAuth is not yet configured for this provider.',
                 style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 12),
@@ -341,9 +354,9 @@ class _AutomationState extends ConsumerState<AutomationScreen> {
   @override void dispose() { for (final c in fields.values) { c.dispose(); } super.dispose(); }
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Automation')), body: PageBody(children: [
     const Heading('Your rules.\nSHIFT follows.', 'Define the boundaries before automation begins.'),
-    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('AI autopilot paused; manual Supabase scheduling active'), subtitle: Text('Supabase Cron can publish manually scheduled approved posts to supported accounts. AI autopilot and recurring AI tasks remain paused.'))),
+    const Panel(glass: true, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.pause_circle_outline), title: Text('AI autopilot paused; manual SHIFT scheduling active'), subtitle: Text('SHIFT Scheduler can publish manually scheduled approved posts to supported accounts. AI autopilot and recurring AI tasks remain paused.'))),
     const SizedBox(height: 16),
-    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'AI autopilot remains paused; manually approved Supabase schedules are unaffected.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
+    OutlinedButton.icon(onPressed: () async { final w = ref.read(workspaceProvider); w.preferences['paused'] = 'true'; w.record('Local automation pause preference saved', '/automation'); final ok = await w.persist(); if (context.mounted) toast(context, ok ? 'AI autopilot remains paused; manually approved SHIFT schedules are unaffected.' : 'Could not persist pause preference.'); }, icon: const Icon(Icons.pause), label: const Text('Keep automation paused')),
     Form(key: form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Section('Publishing mode'),
       ...['Manual', 'Approval required', 'Trusted Autopilot'].map((s) => RadioListTile<String>(contentPadding: EdgeInsets.zero, value: s, groupValue: mode, title: Text(s), subtitle: Text(s == 'Manual' ? 'Every publication needs your action.' : s == 'Approval required' ? 'Review exact content and destinations.' : 'Only within explicit account and content rules.'), onChanged: (v) => setState(() => mode = v!))),
@@ -452,9 +465,8 @@ class _NotificationsState extends ConsumerState<NotificationsScreen> {
           ServiceNotice(text:w.cloudAuthenticated
             ?'Notifications are read from SHIFT Cloud. Push delivery is not configured yet.'
             :'Offline workspace • Sign in to see server notifications.'),
-          if(loading)const LinearProgressIndicator(),
-          if(error!=null)Text(error!,
-            style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          if(loading)const ShiftSkeleton(rows:4),
+          ShiftErrorNotice(error,title:'Unable to load notifications'),
           if(!loading&&notifications.isEmpty)
             const Empty('You’re all caught up',
               'No cloud notifications have been received.',

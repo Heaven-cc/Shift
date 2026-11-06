@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import '../cloud/shift_cloud.dart';
 import '../domain/models.dart';
 import 'direct_bridge.dart';
@@ -39,7 +40,7 @@ class DirectScheduleButton extends StatelessWidget {
       }
       final confirmed=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
         title:const Text('Confirm scheduled post'),
-        content:Text('Account: ${choice.handle}\nScheduled for: $when\n\nSupabase Cron will publish this approved post even when the app is closed.'),
+        content:Text('Account: ${choice.handle}\nScheduled for: $when\n\nSHIFT Scheduler will publish this approved post even when the app is closed.'),
         actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),
           FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Schedule'))]))??false;
       if(!confirmed||!context.mounted)return;
@@ -52,10 +53,9 @@ class DirectScheduleButton extends StatelessWidget {
         'scheduledAt':when.toUtc().toIso8601String()
       });
       if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content:Text('Post queued in Supabase. Publishing depends on the connected account remaining valid.')));
-    }catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content:Text(e.toString().replaceFirst('Bad state: ',''))));}
+        const SnackBar(content:Text('Post queued in SHIFT. Publishing depends on the connected account remaining valid.')));
+    }catch(e){if(context.mounted)showShiftError(context,e,title:'Unable to schedule post');}
   }
   @override Widget build(BuildContext context)=>OutlinedButton(
-    onPressed:()=>schedule(context),child:const Text('Schedule with Supabase'));
+    onPressed:()=>schedule(context),child:const Text('Schedule with SHIFT'));
 }

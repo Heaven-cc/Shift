@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import '../cloud/shift_cloud.dart';
 import 'direct_bridge.dart';
 
@@ -57,7 +58,7 @@ class _DirectConnectionsPanelState extends State<DirectConnectionsPanel>{
   @override Widget build(BuildContext context)=>Card(
     child:Padding(padding:const EdgeInsets.all(16),child:Column(
       crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Text('Supabase publishing',style:Theme.of(context).textTheme.titleMedium),
+        Text('SHIFT publishing',style:Theme.of(context).textTheme.titleMedium),
         const SizedBox(height:8),
         const Text('Schedule approved posts without a VPS. Supported now: Bluesky text posts. Other networks still require their provider OAuth setup.'),
         const SizedBox(height:12),
@@ -86,9 +87,11 @@ class _DirectConnectionsPanelState extends State<DirectConnectionsPanel>{
           TextButton.icon(onPressed:loading?null:refresh,
             icon:const Icon(Icons.refresh),label:const Text('Refresh accounts')),
         ],
-        if(loading)const LinearProgressIndicator(),
-        if(message!=null)Padding(padding:const EdgeInsets.only(top:8),
-          child:Text(message!)),
+        if(loading)const ShiftSkeleton(rows:3),
+        if(message!=null&&message!.toLowerCase().contains('connected securely'))
+          Padding(padding:const EdgeInsets.only(top:8),child:Text(message!)),
+        if(message!=null&&!message!.toLowerCase().contains('connected securely'))
+          ShiftErrorNotice(message),
     ])),
   );
 }

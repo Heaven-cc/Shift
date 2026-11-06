@@ -86,7 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
               Text(connected
-                ? 'Drafts, brand settings and preferences sync to Supabase. Direct scheduling currently supports connected Bluesky text accounts; other providers need setup.'
+                ? 'Drafts, brand settings and preferences sync securely with SHIFT. Direct scheduling currently supports connected Bluesky text accounts; other providers need setup.'
                 : 'Drafts stay on this device. Sign in to sync content and connect supported accounts.'),
             ],
           )),
@@ -99,10 +99,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             tooltip: 'Refresh publishing status',
             icon: const Icon(Icons.refresh)),
         ]),
-        if (loading) const LinearProgressIndicator(),
-        if (liveError != null)
-          Text('Could not refresh publishing status: $liveError',
-            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        if (loading) const ShiftSkeleton(rows:3),
+        ShiftErrorNotice(liveError,title:'Unable to refresh publishing status'),
         if (checkedAt != null)
           Text('Latest 100 direct publishing jobs • last checked locally',
             style: Theme.of(context).textTheme.bodySmall),

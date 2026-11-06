@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'postiz_bridge.dart';
 
@@ -73,12 +74,9 @@ class _PostizConnectionsPanelState extends State<PostizConnectionsPanel> {
         const Text('Connect your Postiz workspace, then add your social channels in Postiz. SHIFT can list channels and submit approved posts for scheduling when the server is configured.'),
         if (loading) const Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
-          child: LinearProgressIndicator(),
+          child: ShiftSkeleton(rows:3),
         ),
-        if (error != null) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-        ),
+        ShiftErrorNotice(error),
         if (!loading) ...[
           Text(connected ? 'Postiz workspace connected' : 'Postiz workspace not connected'),
           if (connected) ...[

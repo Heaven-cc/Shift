@@ -59,7 +59,7 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
       final data = Map<String,dynamic>.from(response.data as Map);
       if (data['error'] != null) {
         if (data['error'] == 'research_not_configured') {
-          throw StateError('SHIFT needs a server-side Brave Search API key for live research.');
+          throw StateError('Live research is unavailable right now.');
         }
         throw StateError(data['message']?.toString() ?? data['error'].toString());
       }
@@ -90,9 +90,8 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
       ServiceNotice(text: w.cloudAuthenticated
         ? 'Online research uses verified workspace settings and brand context. Search results are not independently fact-checked.'
         : 'Offline workspace • Sign in to enable live research and cloud history.'),
-      if (researching) const LinearProgressIndicator(),
-      if (researchError != null) Padding(padding: const EdgeInsets.only(bottom: 12),
-        child: Text(researchError!,style:TextStyle(color:Theme.of(context).colorScheme.error))),
+      if (researching) const ShiftSkeleton(rows:4),
+      ShiftErrorNotice(researchError,title:'Unable to load research'),
       Wrap(spacing: 8, children: ['Saved', 'Results', 'Trending', 'For you', 'History'].map((s) => ChoiceChip(label: Text(s), selected: filter == s, onSelected: (_) => setState(() => filter = s))).toList()),
       if (w.interests.isNotEmpty) ...[
         const Section('Your interests'),
@@ -106,7 +105,8 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
         Section('Saved online research',
           action: TextButton.icon(onPressed:loadingHistory?null:loadHistory,
             icon:const Icon(Icons.refresh),label:const Text('Refresh'))),
-        if(history.isEmpty) const Empty('No research history yet',
+        if(loadingHistory)const ShiftSkeleton(rows:4),
+        if(!loadingHistory&&history.isEmpty) const Empty('No research history yet',
           'Research a topic while signed in to save source discovery history online.',
           icon:Icons.history),
         ...history.map((item)=>Padding(padding:const EdgeInsets.only(bottom:8),

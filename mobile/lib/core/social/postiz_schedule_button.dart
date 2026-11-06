@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/design.dart';
 import '../cloud/shift_cloud.dart';
 import '../domain/models.dart';
 import 'postiz_bridge.dart';
@@ -95,9 +96,7 @@ class PostizScheduleButton extends StatelessWidget {
           : 'Submission outcome uncertain. Check Postiz before attempting again.'),
       ));
     } catch (error) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.toString().replaceFirst('Bad state: ','')),
-      ));
+      if(context.mounted)showShiftError(context,error,title:'Unable to schedule post');
     }
   }
 
