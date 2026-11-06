@@ -75,10 +75,7 @@ class _PostizConnectionsPanelState extends State<PostizConnectionsPanel> {
           padding: EdgeInsets.symmetric(vertical: 12),
           child: ShiftSkeleton(rows:3),
         ),
-        if (error != null) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-        ),
+        ShiftErrorNotice(error),
         if (!loading) ...[
           Text(connected ? 'Postiz workspace connected' : 'Postiz workspace not connected'),
           if (connected) ...[
