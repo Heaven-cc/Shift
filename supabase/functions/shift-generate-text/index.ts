@@ -23,7 +23,7 @@ Deno.serve(async (req:Request)=>{
   // All new SHIFT AI calls share a backend-only, explicitly selected provider.
   // Do not infer a default from the older Groq integration.
   const provider=(Deno.env.get("SHIFT_AI_PROVIDER")||"nvidia").toLowerCase();
-  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+  const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
   const roles=selected==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
   const aiCandidates=provider==="nvidia"?
     roles.map(role=>({
@@ -149,7 +149,7 @@ Deno.serve(async (req:Request)=>{
 
   const generate=async():Promise<Response>=>{
   const controller=new AbortController();
-  const deadline=setTimeout(()=>controller.abort(),payload.async===true?90000:25000);
+  const deadline=setTimeout(()=>controller.abort(),75000);
   try {
     const safety=[
       "Create original social media copy in valid JSON only.",
@@ -190,17 +190,20 @@ Deno.serve(async (req:Request)=>{
     let text="";
     let attemptedError:unknown;
     for(const candidate of aiCandidates){
+     const modelRole=candidate.model===(Deno.env.get("SHIFT_NVIDIA_GLM_MODEL")||"")?"glm":
+       candidate.model===(Deno.env.get("SHIFT_NVIDIA_MISTRAL_MODEL")||"")?"mistral":"other";
+     console.info("SHIFT Studio model attempt started",{modelRole});
      try{
      const providerKey=candidate.key,providerModel=candidate.model;
      const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
       const isGlm53=provider==="nvidia"&&providerModel==="z-ai/glm-5.3";
      const response=await fetch(endpoint,{
-      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(29000)]),
+      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(33000)]),
       headers:{"authorization":`Bearer ${providerKey}`,
         "content-type":"application/json",
-        "accept":isMistral4?"text/event-stream":"application/json"},
+        "accept":(isMistral4||isGlm53)?"text/event-stream":"application/json"},
       body:JSON.stringify({
-        model:providerModel,stream:isMistral4,
+        model:providerModel,stream:isMistral4||isGlm53,
         ...(provider==="openai"?{max_completion_tokens:1100}:{max_tokens:1100}),
         ...(isMistral4||isGlm53?{reasoning_effort:"low"}:{}),
         messages:[
@@ -214,7 +217,7 @@ Deno.serve(async (req:Request)=>{
       }),
     });
     if(!response.ok){
-      console.warn("SHIFT Studio NVIDIA rejected request",{provider,status:response.status});
+      console.warn("SHIFT Studio upstream rejected request",{modelRole,status:response.status});
       if([401,403].includes(response.status))throw Error("provider_credentials_rejected");
       if([400,404,422].includes(response.status))throw Error("provider_model_or_request_invalid");
       if(response.status===429)throw Error("provider_rate_limited");
@@ -222,7 +225,7 @@ Deno.serve(async (req:Request)=>{
       throw Error("provider_unavailable");
     }
     text="";
-    if(isMistral4){
+    if(isMistral4||isGlm53){
       if(!response.body)throw Error("provider_invalid_response");
       const reader=response.body.getReader(),decoder=new TextDecoder();
       let buffer="",doneMarker=false;
@@ -263,6 +266,8 @@ Deno.serve(async (req:Request)=>{
     break;
      }catch(error){
       attemptedError=error;
+      const code=error instanceof Error?error.message:"ai_failed";
+      console.warn("SHIFT Studio model attempt failed",{modelRole,errorCode:code.startsWith("provider_")?code:"ai_failed"});
       if(candidate===aiCandidates[aiCandidates.length-1])throw error;
       console.warn("SHIFT AI switching to another configured text backend");
      }
