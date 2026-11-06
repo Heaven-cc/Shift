@@ -118,6 +118,9 @@ async function handler(req:Request){
  if(action==="status"){
   const active=slots.filter(slot=>slot.type!=="text"&&config(slot).configured);
   return reply({name:"SHIFT AI",availableTypes:[...new Set(active.map(slot=>slot.type))],
+    // Keep a generic compatibility list for older installed Flutter builds.
+    models:active.map(slot=>({id:slot.id,type:slot.type,configured:true,
+      label:slot.type==="voice"?"SHIFT AI Voice":slot.type==="image_edit"?"SHIFT AI Image Edit":"SHIFT AI Image"})),
     configured:active.length>0,tested:false});
  }
  const category:Category=action==="generate_image"?"image":
