@@ -117,6 +117,11 @@ async function handle(req:Request){
   const out=await delegate("shift-nvidia",user.token,{action:"history"});
   return reply(out.data,out.status);
  }
+ if(action==="index_knowledge"){
+  if(!caps.knowledge)return reply({error:"knowledge_not_configured"},503);
+  const out=await delegate("shift-nemotron",user.token,{action:"index"});
+  return reply(out.data,out.status);
+ }
  if(action!=="run")return reply({error:"unknown_action"},400);
  const prompt=clean(body.prompt,1500);
  const requestKey=clean(body.requestKey,150);
