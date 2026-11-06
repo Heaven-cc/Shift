@@ -17,7 +17,18 @@ function settings(){
  if(provider==="openai-compatible"){
   try{const u=new URL(env("SHIFT_AI_BASE_URL"));if(u.protocol==="https:"&&!u.username&&!u.password&&!u.hash&&!/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|.*\.local$)/i.test(u.hostname)&&!/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname))url=u.toString();}catch{}
  }
- return {provider,key,model,url,configured:!!(provider&&key&&model&&url)};
+ const missingSecrets:string[]=[];
+ if(!provider)missingSecrets.push("SHIFT_AI_PROVIDER");
+ if(provider==="nvidia"){
+  if(!key)missingSecrets.push("SHIFT_NVIDIA_API_KEY (or SHIFT_NVIDIA_"+role+"_API_KEY)");
+  if(!model)missingSecrets.push("SHIFT_NVIDIA_"+role+"_MODEL");
+ }else if(provider){
+  if(!key)missingSecrets.push("SHIFT_AI_API_KEY");
+  if(!model)missingSecrets.push("SHIFT_AI_MODEL");
+  if(provider==="openai-compatible"&&!url)missingSecrets.push("SHIFT_AI_BASE_URL");
+  if(!url&&provider!=="openai-compatible")missingSecrets.push("valid SHIFT_AI_PROVIDER");
+ }
+ return {provider,key,model,url,configured:!!(provider&&key&&model&&url),missingSecrets};
 }
 async function identity(req:Request){
  const token=req.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -63,7 +74,7 @@ async function handler(req:Request){
  if(req.method!=="POST")return reply({error:"method_not_allowed"},405);
  let body:any;try{body=obj(await req.json())}catch{return reply({error:"invalid_json"},400)}
  const a=await identity(req),cfg=settings(),action=clean(body.action,30);
- if(action==="status")return reply({configured:cfg.configured,provider:cfg.configured?cfg.provider:null,model:cfg.configured?cfg.model:null,researchAvailable:!!(env("SHIFT_BRAVE_SEARCH_API_KEY")||(cfg.configured&&cfg.provider==="openai")),researchMethod:env("SHIFT_BRAVE_SEARCH_API_KEY")?"brave":cfg.configured&&cfg.provider==="openai"?"openai_web_search":null,credentialStorage:"supabase_edge_secrets",autonomousPublishing:false});
+ if(action==="status")return reply({configured:cfg.configured,provider:cfg.provider||null,model:cfg.model||null,missingSecrets:cfg.missingSecrets,researchAvailable:!!(env("SHIFT_BRAVE_SEARCH_API_KEY")||(cfg.configured&&cfg.provider==="openai")),researchMethod:env("SHIFT_BRAVE_SEARCH_API_KEY")?"brave":cfg.configured&&cfg.provider==="openai"?"openai_web_search":null,credentialStorage:"supabase_edge_secrets",autonomousPublishing:false});
  if(action==="history"){const {data,error}=await a.db.from("shift_generation_jobs").select("id,request_key,status,result,error_code,created_at").eq("workspace_id",a.wid).order("created_at",{ascending:false}).limit(80);if(error)throw Error("storage_error");return reply({history:(data||[]).filter(x=>String(x.request_key||"").startsWith("shift-workspace-")).slice(0,25)})}
  if(action==="plan_items"){const {data,error}=await a.db.from("shift_ai_plan_items").select("id,title,caption,platform,planned_at,state,post_id").eq("workspace_id",a.wid).order("planned_at").limit(100);if(error)throw Error("storage_error");return reply({items:data||[]})}
  if(action==="accept_plan"){const id=clean(body.itemId,50);if(!/^[a-f0-9-]{36}$/i.test(id))return reply({error:"invalid_item"},400);const {data,error}=await a.caller.rpc("shift_accept_ai_plan",{p_item_id:id});return error?reply({error:"plan_accept_failed"},409):reply({accepted:true,postId:data,published:false})}
