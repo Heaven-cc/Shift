@@ -157,7 +157,7 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
 }
 // Try each independently configured text model without asking the user to choose.
 async function modelCallWithFallback(c:ReturnType<typeof settings>,system:string,prompt:string,withWeb:boolean){
- const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"mistral").toLowerCase()==="glm"?"GLM":"MISTRAL";
+ const preferred=(env("SHIFT_NVIDIA_TEXT_ROLE")||"glm").toLowerCase()==="glm"?"GLM":"MISTRAL";
  const roles=preferred==="GLM"?["GLM","MISTRAL"]:["MISTRAL","GLM"];
  const options=c.provider==="nvidia"?roles.map(role=>({
    ...c,key:env("SHIFT_NVIDIA_"+role+"_API_KEY")||env("SHIFT_NVIDIA_API_KEY"),
