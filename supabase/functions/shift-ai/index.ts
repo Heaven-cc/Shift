@@ -53,10 +53,32 @@ async function modelCall(c:ReturnType<typeof settings>,system:string,prompt:stri
   for(const p of parts)for(const a of (p.annotations||[])){if(a.type!=="url_citation")continue;try{const u=new URL(a.url);if(u.protocol==="https:"&&!sources.some(x=>x.url===u.toString()))sources.push({url:u.toString(),title:clean(a.title,200),summary:"Web search citation",publisher:u.hostname})}catch{}}
   return {text:parts.map(x=>clean(x.text,16000)).join("\n")||clean(d.output_text,16000),sources};
  }
- const r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(24000),headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},body:JSON.stringify({model:c.model,...(c.provider==="openai"?{max_completion_tokens:1800}:{max_tokens:1800}),messages:[{role:"system",content:system},{role:"user",content:prompt}]})});
- if(!r.ok)throw Error("provider_unavailable");
- const d=await r.json();
- return {text:clean(d.choices?.[0]?.message?.content,16000),sources:[]};
+ let r:Response;
+ try{
+  r=await fetch(c.url,{method:"POST",signal:AbortSignal.timeout(65000),
+   headers:{"Content-Type":"application/json","Authorization":"Bearer "+c.key},
+   body:JSON.stringify({model:c.model,
+    ...(c.provider==="openai"?{max_completion_tokens:3500}:{max_tokens:3500}),
+    messages:[{role:"system",content:system},{role:"user",content:prompt}]})});
+ }catch(error){
+  if(error instanceof Error && ["TimeoutError","AbortError"].includes(error.name))
+   throw Error("provider_timeout");
+  throw Error("provider_network_error");
+ }
+ if(!r.ok){
+  if(r.status===401||r.status===403)throw Error("provider_credentials_rejected");
+  if(r.status===404||r.status===400||r.status===422)throw Error("provider_model_or_request_invalid");
+  if(r.status===429)throw Error("provider_rate_limited");
+  if(r.status>=500)throw Error("provider_upstream_error");
+  throw Error("provider_unavailable");
+ }
+ let d:any;
+ try{d=await r.json();}catch{throw Error("provider_invalid_response");}
+ const content=d.choices?.[0]?.message?.content;
+ const text=typeof content==="string"?content:
+  Array.isArray(content)?content.map((p:any)=>clean(p.text,16000)).join("\n"):"";
+ if(!text.trim())throw Error("provider_empty_response");
+ return {text:clean(text,16000),sources:[]};
 }
 async function handler(req:Request){
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers});
@@ -106,6 +128,20 @@ async function handler(req:Request){
   const {error:doneError}=await a.db.from("shift_generation_jobs").update({status:"completed",result,completed_at:new Date().toISOString()}).eq("id",jobId).eq("workspace_id",a.wid);
   if(doneError)throw Error("storage_error");
   return reply({jobId,status:"completed",result});
- }catch(e){const m=e instanceof Error?e.message:"ai_failed";const safe=["blocked_topic","provider_unavailable","search_unavailable","invalid_model_output","invalid_calendar","plan_storage_failed","storage_error"].includes(m)?m:"ai_failed";await a.db.from("shift_generation_jobs").update({status:"failed",error_code:safe,completed_at:new Date().toISOString()}).eq("id",jobId).eq("workspace_id",a.wid);return reply({jobId,error:safe},502)}
+ }catch(e){
+  const m=e instanceof Error?e.message:"ai_failed";
+  const safe=["blocked_topic","provider_unavailable","provider_timeout",
+   "provider_network_error","provider_credentials_rejected","provider_model_or_request_invalid",
+   "provider_rate_limited","provider_upstream_error","provider_invalid_response",
+   "provider_empty_response","search_unavailable","invalid_model_output","invalid_calendar",
+   "plan_storage_failed","storage_error"].includes(m)?m:"ai_failed";
+  console.error("SHIFT AI generation failure",{jobId,code:safe,provider:cfg.provider});
+  await a.db.from("shift_generation_jobs").update({status:"failed",error_code:safe,
+   completed_at:new Date().toISOString()}).eq("id",jobId).eq("workspace_id",a.wid);
+  const status=safe==="provider_rate_limited"?429:
+   safe==="provider_credentials_rejected"?502:
+   safe==="provider_timeout"?504:502;
+  return reply({jobId,error:safe},status);
+ }
 }
 Deno.serve(async(req)=>{try{return await handler(req)}catch(e){const s=e instanceof Error&&e.message==="unauthorized"?"unauthorized":"request_failed";console.error("SHIFT AI",s);return reply({error:s},s==="unauthorized"?401:403)}});
