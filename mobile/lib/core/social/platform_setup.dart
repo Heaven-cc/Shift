@@ -35,7 +35,7 @@ Future<void> showPlatformSetup(BuildContext context, ShiftSocialPlatform platfor
                   mode: LaunchMode.externalApplication,
                 );
                 if (!opened && sheetContext.mounted) {
-                  showShiftError(sheetContext,'Unable to open the developer website.',title:'Could not open website');
+                  showShiftMessage(sheetContext,'Could not open website','Check your connection and try again.');
                 }
               },
               icon: const Icon(Icons.open_in_new),
@@ -59,6 +59,6 @@ Future<void> openPlatformHome(BuildContext context, ShiftSocialPlatform platform
     Uri.parse(platform.homeUrl), mode: LaunchMode.externalApplication,
   );
   if (!opened && context.mounted) {
-    showShiftError(context,'Could not open ${platform.name}.',title:'Could not open website');
+    showShiftMessage(context,'Could not open ${platform.name}','Check your connection and try again.');
   }
 }
