@@ -24,12 +24,13 @@ Deno.serve(async (req:Request)=>{
   // Do not infer a default from the older Groq integration.
   const provider=(Deno.env.get("SHIFT_AI_PROVIDER")??"").toLowerCase();
   const selected=(Deno.env.get("SHIFT_NVIDIA_TEXT_ROLE")??"mistral").toLowerCase()==="kimi"?"KIMI":"MISTRAL";
-  const providerKey=provider==="nvidia"?
-    (Deno.env.get("SHIFT_NVIDIA_"+selected+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY"))
-    :Deno.env.get("SHIFT_AI_API_KEY");
-  const providerModel=provider==="nvidia"?
-    Deno.env.get("SHIFT_NVIDIA_"+selected+"_MODEL")
-    :Deno.env.get("SHIFT_AI_MODEL");
+  const roles=selected==="KIMI"?["KIMI","MISTRAL"]:["MISTRAL","KIMI"];
+  const aiCandidates=provider==="nvidia"?
+    roles.map(role=>({
+      key:Deno.env.get("SHIFT_NVIDIA_"+role+"_API_KEY")||Deno.env.get("SHIFT_NVIDIA_API_KEY")||"",
+      model:Deno.env.get("SHIFT_NVIDIA_"+role+"_MODEL")||"",
+    })).filter(candidate=>candidate.key&&candidate.model):
+    [{key:Deno.env.get("SHIFT_AI_API_KEY")||"",model:Deno.env.get("SHIFT_AI_MODEL")||""}];
   const endpoints:Record<string,string>={
     openai:"https://api.openai.com/v1/chat/completions",
     gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -49,7 +50,7 @@ Deno.serve(async (req:Request)=>{
   }
   if(!url||!anonKey||!serviceRole)return respond({error:"backend_not_configured"},503);
   // No AI requests or usage are recorded until the provider is configured.
-  if(!providerKey||!providerModel||!endpoint)
+  if(!aiCandidates.length||!aiCandidates[0].key||!aiCandidates[0].model||!endpoint)
     return respond({error:"ai_provider_not_configured"},503);
   const authorization=req.headers.get("authorization")??"";
   const token=authorization.replace(/^Bearer\s+/i,"");
@@ -186,9 +187,14 @@ Deno.serve(async (req:Request)=>{
       ideas:"Provide 5 original, specific post ideas in ideas; write a short helpful caption summarizing why they fit the brand.",
       strategy:"Offer a practical, brand-aware editorial strategy with positioning, 3-5 content pillars, a manageable weekly cadence and 2 concrete experiments. Never claim analytics are available when they are not."
     };
-    const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
-    const response=await fetch(endpoint,{
-      method:"POST",signal:controller.signal,
+    let text="";
+    let attemptedError:unknown;
+    for(const candidate of aiCandidates){
+     try{
+     const providerKey=candidate.key,providerModel=candidate.model;
+     const isMistral4=provider==="nvidia"&&providerModel==="mistralai/mistral-large-4-1t-a52b";
+     const response=await fetch(endpoint,{
+      method:"POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(29000)]),
       headers:{"authorization":`Bearer ${providerKey}`,
         "content-type":"application/json",
         "accept":isMistral4?"text/event-stream":"application/json"},
@@ -214,7 +220,7 @@ Deno.serve(async (req:Request)=>{
       if(response.status>=500)throw Error("provider_upstream_error");
       throw Error("provider_unavailable");
     }
-    let text="";
+    text="";
     if(isMistral4){
       if(!response.body)throw Error("provider_invalid_response");
       const reader=response.body.getReader(),decoder=new TextDecoder();
@@ -253,6 +259,14 @@ Deno.serve(async (req:Request)=>{
       text=content;
     }
     if(!text||text.length>20000)throw Error("provider_invalid_response");
+    break;
+     }catch(error){
+      attemptedError=error;
+      if(candidate===aiCandidates[aiCandidates.length-1])throw error;
+      console.warn("SHIFT AI switching to another configured text backend");
+     }
+    }
+    if(!text)throw attemptedError??Error("provider_unavailable");
     let obj:Record<string,unknown>;
     try {obj=JSON.parse(text);}catch{
       const start=text.indexOf("{"),end=text.lastIndexOf("}");
@@ -282,7 +296,6 @@ Deno.serve(async (req:Request)=>{
         }:null,
       mode,
       requiresReview:true,
-      provider,model:providerModel,
     };
     if(!result.caption)throw Error("empty_caption");
     await admin.from("shift_generation_jobs").update({
