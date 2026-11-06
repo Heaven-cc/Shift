@@ -30,7 +30,7 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
   Map<String,dynamic>? generatedMedia;
   bool mediaBusy=false;
   bool loading=false,configured=false,research=false;
-  String mode='research',message='',progress='';
+  String mode='ideas',message='',progress='';
   Map<String,dynamic>? output;
   List<Map<String,dynamic>> plans=[],history=[];
   @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_)=>refresh());}
@@ -338,10 +338,10 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           FilledButton(onPressed:()=>context.push('/auth'),child:const Text('Sign in')),
         ]else ...[
           Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text(configured?'SHIFT AI connected':'SHIFT AI unavailable',
+            Text(configured?'SHIFT AI configured':'SHIFT AI unavailable',
               style:Theme.of(context).textTheme.titleMedium),
             const SizedBox(height:6),
-            Text(configured?'Text generation is configured. Requests are routed automatically.':'An administrator needs to configure a working AI connection.'),
+            Text(configured?'Models are chosen automatically. A successful generation is required to confirm they work.':'An administrator needs to configure a working AI connection.'),
             const SizedBox(height:6),
             Text(research?'Live research available':
               'For live research configure Brave Search or OpenAI native web search.',
@@ -350,7 +350,9 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
           const Section('AI request'),
           DropdownButtonFormField<String>(
             value:mode,decoration:const InputDecoration(labelText:'Task'),
-            items:modes.entries.map((v)=>DropdownMenuItem(
+            items:modes.entries.where((v)=>research||
+                (v.key!='research'&&v.key!='competitors'))
+              .map((v)=>DropdownMenuItem(
               value:v.key,child:Text(v.value))).toList(),
             onChanged:loading?null:(v)=>setState(()=>mode=v??'research')),
           const SizedBox(height:12),
