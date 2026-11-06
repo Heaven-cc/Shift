@@ -95,7 +95,7 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
       throw StateError('The AI job was not accepted.');
     }
     var networkFailures=0;
-    for(var attempt=0;attempt<32;attempt++){
+    for(var attempt=0;attempt<40;attempt++){
       await Future<void>.delayed(const Duration(seconds:4));
       final check=await (() async {
         try{
