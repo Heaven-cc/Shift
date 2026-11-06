@@ -196,7 +196,7 @@ class Workspace extends ChangeNotifier {
         notifications:notificationPreferences,onboardingComplete:onboardingComplete);
       cloudError=null; notifyListeners(); return true;
     } catch(e) {
-      cloudError='Cloud settings could not be saved: $e';
+      cloudError='Your SHIFT settings could not be saved. Please try again.';
       notifyListeners(); return false;
     }
   }
@@ -214,7 +214,7 @@ class Workspace extends ChangeNotifier {
       }).toList());
       cloudError=null; return true;
     } catch(e) {
-      cloudError='Cloud draft save failed. Changes remain in the editor; retry before leaving the page: $e';
+      cloudError='Your draft could not be saved. Keep this page open and retry.';
       notifyListeners(); return false;
     }
   }
@@ -229,7 +229,7 @@ class Workspace extends ChangeNotifier {
           'published_at':b.publishedAt?.toUtc().toIso8601String(),
         });
         bookmarks.insert(0,b);notifyListeners();return true;
-      } catch(e) {cloudError='Could not save cloud source: $e';notifyListeners();return false;}
+      } catch(e) {cloudError='Unable to save this source. Please retry.';notifyListeners();return false;}
     }
     bookmarks.insert(0,b);return persist();
   }
@@ -237,7 +237,7 @@ class Workspace extends ChangeNotifier {
   Future<bool> deleteBookmark(String id) async {
     if(cloudAuthenticated) {
       try {await ShiftCloud.deleteBookmark(cloudWorkspaceId!,id);}
-      catch(e){cloudError='Could not remove cloud source: $e';notifyListeners();return false;}
+      catch(e){cloudError='Unable to remove this source. Please retry.';notifyListeners();return false;}
     }
     bookmarks.removeWhere((b)=>b.id==id);
     if(cloudAuthenticated){notifyListeners();return true;}
@@ -263,7 +263,7 @@ class Workspace extends ChangeNotifier {
         }).toList());
       }
       await openCloud();return true;
-    } catch(e){cloudError='Import stopped; original local data is preserved: $e';notifyListeners();return false;}
+    } catch(e){cloudError='Import could not finish. Your original data has been preserved.';notifyListeners();return false;}
   }
 
   Future<bool> retrySave() { storageError = null; return persist(); }
@@ -314,7 +314,7 @@ class Workspace extends ChangeNotifier {
         await ShiftCloud.deleteDraft(cloudWorkspaceId!,id);
         posts.removeWhere((p)=>p.id==id);
         notifyListeners();return true;
-      } catch(e){cloudError='Could not delete cloud draft: $e';notifyListeners();return false;}
+      } catch(e){cloudError='Unable to delete this draft. Please retry.';notifyListeners();return false;}
     }
     posts.removeWhere((p) => p.id == id);
     record('Local draft deleted', '/drafts');
