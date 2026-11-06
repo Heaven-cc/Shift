@@ -19,13 +19,11 @@ class PostizScheduleButton extends StatelessWidget {
 
   Future<void> schedule(BuildContext context) async {
     if (ShiftCloud.user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Sign in to SHIFT Cloud before scheduling a post.')));
+      showShiftMessage(context,'Sign in required','Sign in to SHIFT before scheduling a post.');
       return;
     }
     if (post.status != PostStatus.approved) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Approve the exact content version before scheduling.')));
+      showShiftMessage(context,'Approval required','Approve the saved content version before scheduling.');
       return;
     }
     try {
@@ -35,8 +33,7 @@ class PostizScheduleButton extends StatelessWidget {
         textProviders.contains(channel.provider)).toList();
       if (!context.mounted) return;
       if (matched.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No connected Postiz channel matches this destination. Connect the account in Postiz first.')));
+        showShiftMessage(context,'No connected account','Connect an account for this platform before scheduling.');
         return;
       }
       final chosen = await showDialog<ShiftPostizChannel>(
@@ -64,8 +61,7 @@ class PostizScheduleButton extends StatelessWidget {
       if (time == null || !context.mounted) return;
       final when = DateTime(date.year,date.month,date.day,time.hour,time.minute);
       if (!when.isAfter(DateTime.now().add(const Duration(minutes: 1)))) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Choose a future time at least one minute away.')));
+        showShiftMessage(context,'Choose another time','Select a time at least one minute in the future.');
         return;
       }
       final approved = await showDialog<bool>(
@@ -90,11 +86,13 @@ class PostizScheduleButton extends StatelessWidget {
       });
       if (!context.mounted) return;
       final status = result['status'];
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(status == 'scheduled'
-          ? 'Post accepted by Postiz for scheduled publishing.'
-          : 'Submission outcome uncertain. Check Postiz before attempting again.'),
-      ));
+      if (status == 'scheduled') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Post accepted for scheduled publishing.')));
+      } else {
+        showShiftMessage(context,'Scheduling needs attention',
+          'The publishing outcome is uncertain. Check your connected service before trying again.');
+      }
     } catch (error) {
       if(context.mounted)showShiftError(context,error,title:'Unable to schedule post');
     }

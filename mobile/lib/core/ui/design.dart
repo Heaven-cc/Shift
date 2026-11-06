@@ -109,6 +109,24 @@ String shiftFriendlyError(Object? error) {
   return 'Something went wrong. Please try again. If it continues, check your connection or contact support.';
 }
 
+Future<void> showShiftMessage(BuildContext context, String title, String message) async {
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<void> showShiftError(BuildContext context, Object? error,
     {String title = 'Could not complete request', VoidCallback? onRetry}) async {
   if (!context.mounted) return;

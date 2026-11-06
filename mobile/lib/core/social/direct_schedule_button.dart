@@ -10,19 +10,19 @@ class DirectScheduleButton extends StatelessWidget {
 
   Future<void> schedule(BuildContext context) async{
     if(ShiftCloud.user==null){
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Sign in to SHIFT first.')));return;
+      showShiftMessage(context,'Sign in required','Sign in to SHIFT before scheduling a post.');return;
     }
     if(post.status!=PostStatus.approved){
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Approve this saved version before scheduling.')));return;
+      showShiftMessage(context,'Approval required','Approve the saved post before scheduling it.');return;
     }
     if(post.current.platform!='Bluesky'||post.current.imagePath!=null){
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Direct scheduling currently supports Bluesky text posts.')));return;
+      showShiftMessage(context,'Destination not supported','Direct scheduling currently supports Bluesky text posts only.');return;
     }
     try{
       final accounts=(await ShiftDirectBridge.accounts()).where((a)=>a.platform=='bluesky').toList();
       if(!context.mounted)return;
       if(accounts.isEmpty){
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Connect Bluesky under Social accounts first.')));return;
+        showShiftMessage(context,'Connect an account','Connect Bluesky under Social Accounts first.');return;
       }
       final choice=await showDialog<ShiftDirectAccount>(context:context,builder:(c)=>SimpleDialog(
         title:const Text('Publishing account'),
@@ -36,7 +36,7 @@ class DirectScheduleButton extends StatelessWidget {
       if(time==null||!context.mounted)return;
       final when=DateTime(date.year,date.month,date.day,time.hour,time.minute);
       if(!when.isAfter(DateTime.now().add(const Duration(minutes:1)))){
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Choose a time at least a minute ahead.')));return;
+        showShiftMessage(context,'Choose another time','Select a time at least one minute in the future.');return;
       }
       final confirmed=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
         title:const Text('Confirm scheduled post'),
