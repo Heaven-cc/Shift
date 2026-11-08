@@ -10,19 +10,45 @@ class InsightsScreen extends StatefulWidget {
 class _InsightsState extends State<InsightsScreen> {
   String period = 'Last 30 days', platform = 'All platforms';
   @override Widget build(BuildContext context) => PageBody(children: [
-    const Heading('See what resonates.', 'Real performance. Better decisions.'),
-    Wrap(spacing: 8, runSpacing: 8, children: [
-      DropdownButton<String>(value: period, items: ['Last 7 days', 'Last 30 days', 'Last 90 days'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => period = v!)),
-      DropdownButton<String>(value: platform, items: ['All platforms', ...ShiftSocialPlatforms.names].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => platform = v!)),
-    ]),
-    const SizedBox(height: 12), const ServiceNotice(text: 'No account metrics have been received. A dash means unavailable, not zero.'),
-    LayoutBuilder(builder: (c, box) => Wrap(spacing: 12, runSpacing: 12, children: ['Published posts', 'Views / impressions', 'Reach', 'Engagement', 'Likes', 'Comments', 'Shares', 'Follower growth'].map((s) => SizedBox(width: (box.maxWidth - 12) / 2, child: Panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('—', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)), Text(s)])))).toList())),
-    const Section('Engagement over time'), const Empty('No data to chart', 'Engagement history will use the selected period and available provider metrics.', icon: Icons.show_chart),
-    const Section('Publishing frequency'), const Empty('No confirmed publications', 'Local draft plans are excluded from publishing analytics.', icon: Icons.calendar_month_outlined),
-    const Section('Top content & platform comparison'), const Empty('Your results belong here', 'Content rankings and format comparisons need real performance records.'),
-    const Section('AI recommendations'), const Empty('SHIFT is still learning', 'No personalized recommendations yet. A useful starting point: write for a clear audience and keep a consistent voice.', icon: Icons.auto_awesome_outlined),
-    const SizedBox(height: 20),
-    FilledButton(onPressed: () => context.push('/accounts'), child: const Text('Manage social accounts')),
-    const SizedBox(height: 8), OutlinedButton(onPressed: () => unavailable(context, 'Analytics sync'), child: const Text('Sync metrics')),
+    const Heading('Understand your impact.', 'A clear view of what is working and where to go next.'),
+    Panel(glass: true, padding: const EdgeInsets.all(16), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('PERFORMANCE OVERVIEW', style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: DropdownButtonFormField<String>(value: period, isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Period'),
+            items: ['Last 7 days', 'Last 30 days', 'Last 90 days'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            onChanged: (v) => setState(() => period = v!))),
+          const SizedBox(width: 10),
+          Expanded(child: DropdownButtonFormField<String>(value: platform, isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Platform'),
+            items: ['All platforms', ...ShiftSocialPlatforms.names].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            onChanged: (v) => setState(() => platform = v!))),
+        ]),
+      ])),
+    const SizedBox(height: 10),
+    const ServiceNotice(text: 'No account metrics have been received yet. A dash means unavailable, not zero.'),
+    const Section('Your key metrics'),
+    GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 1.65,
+      children: ['Published posts', 'Views / impressions', 'Reach', 'Engagement', 'Likes', 'Comments', 'Shares', 'Follower growth'].map((label) =>
+        Panel(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Icon(Icons.insights_outlined, size: 18, color: Theme.of(context).colorScheme.primary),
+            const Text('—', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800, height: 1)),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ]))).toList()),
+    const Section('Performance over time'),
+    const Empty('No performance data yet', 'Engagement history will appear here when connected platforms return real metrics for the selected period.', icon: Icons.show_chart_rounded),
+    const Section('Publishing consistency'),
+    const Empty('Your publishing rhythm', 'Confirmed publications will be compared with your content plan. Local draft dates are not counted as published posts.', icon: Icons.calendar_month_outlined),
+    const Section('Top content'),
+    const Empty('Your best-performing posts', 'Content rankings need real performance records from your connected accounts.'),
+    const Section('Recommendations'),
+    const Empty('Insights will grow with your data', 'SHIFT will use your actual content and account performance to identify useful next steps. No recommendations are fabricated.', icon: Icons.auto_awesome_outlined),
+    const SizedBox(height: 16),
+    FilledButton.icon(onPressed: () => context.push('/accounts'), icon: const Icon(Icons.link_rounded), label: const Text('Manage social accounts')),
+    OutlinedButton(onPressed: () => unavailable(context, 'Analytics sync'), child: const Text('Sync metrics')),
   ]);
 }
