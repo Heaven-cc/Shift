@@ -157,15 +157,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _metric(BuildContext c, String label, String value, VoidCallback tap) =>
-      SizedBox(width: (MediaQuery.sizeOf(c).width.clamp(0, 680) - 48) / 2,
-        child: InkWell(borderRadius: BorderRadius.circular(20),
-          onTap: tap,
-          child: Panel(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: Theme.of(c).textTheme.headlineSmall),
-              const SizedBox(height: 6),
-              Text(label, style: const TextStyle(fontSize: 12)),
-            ],
-          ))));
+      InkWell(
+        borderRadius: BorderRadius.circular(17),
+        onTap: tap,
+        child: Panel(padding: const EdgeInsets.all(14), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(value, style: Theme.of(c).textTheme.headlineSmall),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: Theme.of(c).textTheme.bodySmall),
+          ],
+        )),
+      );
 }
