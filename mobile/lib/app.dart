@@ -60,9 +60,61 @@ class ShiftShell extends ConsumerWidget {
   @override Widget build(BuildContext context, WidgetRef ref) {
     final w = ref.watch(workspaceProvider);
     const names = ['Home', 'Discover', 'Create', 'Calendar', 'Insights'];
-    const icons = [Icons.grid_view_outlined, Icons.explore_outlined, Icons.add, Icons.calendar_month_outlined, Icons.insights_outlined];
-    return Scaffold(appBar: AppBar(title: Row(children: [const Icon(Icons.bolt, size: 28), const SizedBox(width: 4), const Text('SHIFT', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -1)), const SizedBox(width: 12), Expanded(child: Text(w.brand['name'] ?? 'Your workspace', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)))]), actions: [IconButton(tooltip: 'Notifications and activity', onPressed: () => context.push('/notifications'), icon: const Icon(Icons.notifications_none)), IconButton(tooltip: 'Profile and settings', onPressed: () => context.push('/settings'), icon: const Icon(Icons.account_circle_outlined))]),
-      body: SafeArea(child: Column(children: [ShiftErrorNotice(w.storageError,title:'Changes could not be saved',onRetry:(){w.retrySave();}), Expanded(child: shell)])),
-      bottomNavigationBar: SafeArea(top: false, minimum: const EdgeInsets.fromLTRB(12, 8, 12, 12), child: ClipRRect(borderRadius: BorderRadius.circular(24), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: NavigationBar(backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: .85), height: 72, animationDuration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180), selectedIndex: shell.currentIndex, onDestinationSelected: (i) => shell.goBranch(i, initialLocation: i == shell.currentIndex), destinations: List.generate(5, (i) => NavigationDestination(icon: Icon(icons[i]), label: names[i])))))));
+    const icons = [Icons.home_rounded, Icons.explore_outlined, Icons.add_rounded, Icons.calendar_month_outlined, Icons.insights_outlined];
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 62,
+        titleSpacing: 18,
+        title: Row(children: [
+          Container(width: 34, height: 34, decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(11)),
+            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 23)),
+          const SizedBox(width: 10),
+          const Text('SHIFT', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -.8, fontSize: 19)),
+          const SizedBox(width: 10),
+          Flexible(child: Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20)),
+            child: Text(w.brand['name']?.isNotEmpty == true ? w.brand['name']! : 'Workspace',
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall))),
+        ]),
+        actions: [
+          IconButton(tooltip: 'Notifications and activity', onPressed: () => context.push('/notifications'),
+            icon: const Icon(Icons.notifications_none_rounded)),
+          IconButton(tooltip: 'Profile and settings', onPressed: () => context.push('/settings'),
+            icon: const Icon(Icons.account_circle_outlined)),
+          const SizedBox(width: 6),
+        ]),
+      body: SafeArea(child: Column(children: [
+        ShiftErrorNotice(w.storageError, title: 'Changes could not be saved', onRetry: () { w.retrySave(); }),
+        Expanded(child: shell),
+      ])),
+      bottomNavigationBar: SafeArea(top: false, minimum: const EdgeInsets.fromLTRB(14, 5, 14, 10),
+        child: ClipRRect(borderRadius: BorderRadius.circular(23),
+          child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: dark ? .9 : .94),
+                borderRadius: BorderRadius.circular(23),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .8)),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: dark ? .25 : .07), blurRadius: 24, offset: const Offset(0, 8))]),
+              child: NavigationBar(
+                backgroundColor: Colors.transparent, elevation: 0, shadowColor: Colors.transparent,
+                indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: .14),
+                height: 66, labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                animationDuration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 220),
+                selectedIndex: shell.currentIndex,
+                onDestinationSelected: (i) => shell.goBranch(i, initialLocation: i == shell.currentIndex),
+                destinations: List.generate(5, (i) => NavigationDestination(
+                  icon: Icon(icons[i], size: 21), selectedIcon: Icon(icons[i], size: 22),
+                  label: names[i])),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
