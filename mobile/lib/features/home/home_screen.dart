@@ -72,18 +72,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final reviews = w.posts.where((p) => p.status == PostStatus.pendingApproval).length;
     final firstName = w.profile['name']?.trim().split(' ').first;
     return PageBody(children: [
-      Padding(padding: const EdgeInsets.only(top: 4, bottom: 18), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('YOUR WORKSPACE', style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            letterSpacing: 1.5, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 7),
-          Text('Good to see you' + (firstName != null && firstName.isNotEmpty ? ', ' + firstName : '') + '.',
-            style: Theme.of(context).textTheme.headlineLarge),
-          const SizedBox(height: 5),
-          Text(w.brand['name']?.isNotEmpty == true ? 'Building momentum for ' + w.brand['name']! + '.' : 'What would you like to move forward today?',
-            style: Theme.of(context).textTheme.bodyMedium),
-        ],
+      Padding(padding: const EdgeInsets.only(top: 4, bottom: 16), child: GradientHero(
+        padding: const EdgeInsets.all(19),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('YOUR WORKSPACE', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              letterSpacing: 1.5, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 7),
+            Text('Good to see you' + (firstName != null && firstName.isNotEmpty ? ', ' + firstName : '') + '.',
+              style: Theme.of(context).textTheme.headlineLarge),
+            const SizedBox(height: 5),
+            Text(w.brand['name']?.isNotEmpty == true ? 'Building momentum for ' + w.brand['name']! + '.' : 'What would you like to move forward today?',
+              style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
       )),
+
       Panel(glass: true, padding: const EdgeInsets.all(15), child: Row(children: [
         Container(width: 42, height: 42, decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: .12), borderRadius: BorderRadius.circular(13)),
