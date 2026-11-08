@@ -191,7 +191,7 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
       ..sort((a,b) => scheduledAt(a)!.compareTo(scheduledAt(b)!));
     final start = selected.subtract(Duration(days: selected.weekday - 1));
     return PageBody(children: [
-      const Heading('Your content calendar.', 'Plans, scheduled posts and publishing status in one place.'),
+      const Heading('Plan what comes next.', 'Your content plan and confirmed publishing queue, clearly separated.'),
       ServiceNotice(text: w.cloudAuthenticated
         ? 'Cloud scheduling: SHIFT Scheduler is active. Only scheduled jobs in the cloud queue will publish; planning dates are reminders.'
         : 'Offline workspace: plans stay on this device. Sign in to use cloud scheduling.'),
@@ -202,9 +202,17 @@ class _CalendarState extends ConsumerState<CalendarScreen> {
       ]),
       if (loading) const ShiftSkeleton(rows:4),
       ShiftErrorNotice(error,title:'Unable to load schedule'),
-      Wrap(spacing: 8, runSpacing: 8, children: ['Month','Week','Day','List']
-        .map((s) => ChoiceChip(label: Text(s),
-          selected: view == s, onSelected: (_) => setState(() => view = s))).toList()),
+      SegmentedButton<String>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: 'Month', label: Text('Month')),
+          ButtonSegment(value: 'Week', label: Text('Week')),
+          ButtonSegment(value: 'Day', label: Text('Day')),
+          ButtonSegment(value: 'List', label: Text('List')),
+        ],
+        selected: {view},
+        onSelectionChanged: (selection) => setState(() => view = selection.first),
+      ),
       Row(children: [
         IconButton(tooltip: 'Previous period', onPressed: () => move(-1),
           icon: const Icon(Icons.chevron_left)),
