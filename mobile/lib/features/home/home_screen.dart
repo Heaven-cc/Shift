@@ -65,105 +65,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final w = ref.watch(workspaceProvider);
-    final planned = w.posts.where((p) =>
-      p.plannedAt != null && p.status != PostStatus.canceled).toList()
+    final planned = w.posts.where((p) => p.plannedAt != null && p.status != PostStatus.canceled).toList()
       ..sort((a,b) => a.plannedAt!.compareTo(b.plannedAt!));
     final connected = w.cloudAuthenticated;
+    final drafts = w.posts.where((p) => p.status == PostStatus.draft).length;
+    final reviews = w.posts.where((p) => p.status == PostStatus.pendingApproval).length;
+    final firstName = w.profile['name']?.trim().split(' ').first;
     return PageBody(children: [
-      Heading('A little direction.\nA lot of possibility.',
-        w.brand['name']?.isNotEmpty == true
-          ? 'Your workspace, ${w.brand['name']}.'
-          : 'Start shaping your social presence.'),
-      Panel(glass: true, child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.bolt_outlined),
-          const SizedBox(width: 12),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(connected ? 'SHIFT Cloud connected' : 'Offline workspace',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              Text(connected
-                ? 'Drafts, brand settings and preferences sync securely with SHIFT. Direct scheduling currently supports connected Bluesky text accounts; other providers need setup.'
-                : 'Drafts stay on this device. Sign in to sync content and connect supported accounts.'),
-            ],
-          )),
+      Padding(padding: const EdgeInsets.only(top: 4, bottom: 18), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('YOUR WORKSPACE', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            letterSpacing: 1.5, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 7),
+          Text('Good to see you' + (firstName != null && firstName.isNotEmpty ? ', ' + firstName : '') + '.',
+            style: Theme.of(context).textTheme.headlineLarge),
+          const SizedBox(height: 5),
+          Text(w.brand['name']?.isNotEmpty == true ? 'Building momentum for ' + w.brand['name']! + '.' : 'What would you like to move forward today?',
+            style: Theme.of(context).textTheme.bodyMedium),
         ],
       )),
-      if (connected) ...[
-        Row(children: [
-          const Expanded(child: Text('Live publishing status')),
-          IconButton(onPressed: loading ? null : refresh,
-            tooltip: 'Refresh publishing status',
-            icon: const Icon(Icons.refresh)),
-        ]),
-        if (loading) const ShiftSkeleton(rows:3),
-        ShiftErrorNotice(liveError,title:'Unable to refresh publishing status'),
-        if (checkedAt != null)
-          Text('Latest 100 direct publishing jobs • last checked locally',
+      Panel(glass: true, padding: const EdgeInsets.all(15), child: Row(children: [
+        Container(width: 42, height: 42, decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: .12), borderRadius: BorderRadius.circular(13)),
+          child: Icon(connected ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+            color: Theme.of(context).colorScheme.primary)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(connected ? 'SHIFT Cloud connected' : 'Your local workspace',
+            style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 3),
+          Text(connected ? 'Your signed-in workspace is syncing supported data.' :
+            'Your drafts stay on this device until you sign in and sync.',
             style: Theme.of(context).textTheme.bodySmall),
+        ])),
+        if (!connected) IconButton(tooltip: 'Sign in', onPressed: () => context.push('/auth'),
+          icon: const Icon(Icons.arrow_forward_rounded)),
+      ])),
+      const Section('At a glance'),
+      GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.75, children: [
+          _metric(context, 'Drafts', '$drafts', () => context.push('/drafts')),
+          _metric(context, 'Needs review', '$reviews', () => context.push('/approvals')),
+          _metric(context, 'Published', connected ? (publishedPosts?.toString() ?? '—') : '—', () => context.go('/calendar')),
+          _metric(context, 'In queue', connected ? (queuedPosts?.toString() ?? '—') : '—', () => context.go('/calendar')),
+        ]),
+      if (connected) ...[
+        const Section('Publishing activity'),
+        Row(children: [
+          Expanded(child: Text('Live status from your connected workspace', style: Theme.of(context).textTheme.bodySmall)),
+          IconButton(onPressed: loading ? null : refresh, tooltip: 'Refresh status',
+            icon: loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.refresh_rounded)),
+        ]),
+        ShiftErrorNotice(liveError, title: 'Unable to refresh publishing status'),
+        if (checkedAt != null) Text('Last checked ' + checkedAt!.toLocal().toString(), style: Theme.of(context).textTheme.bodySmall),
+        if (connectedAccounts != null) ListTile(contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.link_rounded), title: Text('$connectedAccounts connected account(s)'),
+          subtitle: const Text('Manage your publishing destinations'),
+          trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/accounts')),
       ],
-      const SizedBox(height: 16),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        _metric(context, 'Published', connected ? (publishedPosts?.toString() ?? '—') : '—',
-          () => context.go('/calendar')),
-        _metric(context, 'Queued / processing',
-          connected ? (queuedPosts?.toString() ?? '—') : '—',
-          () => context.go('/calendar')),
-        _metric(context, 'Drafts',
-          '${w.posts.where((p) => p.status == PostStatus.draft).length}',
-          () => context.push('/drafts')),
-        _metric(context, 'Reviews',
-          '${w.posts.where((p) => p.status == PostStatus.pendingApproval).length}',
-          () => context.push('/approvals')),
+      const Section('Create something'),
+      Row(children: [
+        Expanded(child: FilledButton.icon(onPressed: () => context.go('/create'),
+          icon: const Icon(Icons.add_rounded), label: const Text('Create post'))),
+        const SizedBox(width: 10),
+        Expanded(child: OutlinedButton.icon(onPressed: () => context.push('/ai-workspace'),
+          icon: const Icon(Icons.auto_awesome_rounded), label: const Text('SHIFT AI'))),
       ]),
-      if (connected)
-        ListTile(contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.link_outlined),
-          title: Text(connectedAccounts == null ? 'Social accounts: unavailable'
-            : '$connectedAccounts connected direct account(s)'),
-          subtitle: const Text('Other destinations require platform authorization'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/accounts')),
-      const Section('Make your next move'),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        FilledButton.icon(onPressed: () => context.go('/create'),
-          icon: const Icon(Icons.add), label: const Text('Create content')),
-        OutlinedButton.icon(onPressed: () => context.push('/ai-workspace'),
-          icon: const Icon(Icons.auto_awesome), label: const Text('SHIFT AI')),
-        OutlinedButton.icon(onPressed: () => context.go('/discover'),
-          icon: const Icon(Icons.search), label: const Text('Research')),
-        OutlinedButton(onPressed: () => context.push('/drafts'),
-          child: const Text('Review drafts')),
-        OutlinedButton(onPressed: () => context.push('/automation'),
-          child: const Text('Automation')),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: OutlinedButton.icon(onPressed: () => context.go('/discover'),
+          icon: const Icon(Icons.travel_explore_rounded), label: const Text('Research'))),
+        const SizedBox(width: 10),
+        Expanded(child: OutlinedButton.icon(onPressed: () => context.push('/drafts'),
+          icon: const Icon(Icons.folder_open_rounded), label: const Text('Draft library'))),
       ]),
-      Section('Your content plan',
-        action: TextButton(onPressed: () => context.go('/calendar'),
-          child: const Text('Calendar'))),
-      if (planned.isEmpty)
-        const Empty('Room for your next idea',
-          'Create a draft or add a planning date. Only server-queued posts publish.',
-          icon: Icons.calendar_today_outlined),
-      ...planned.take(3).map((p) => PostTile(post: p)),
-      const Section('SHIFT recommendations'),
-      const Empty('Learning starts with real results',
-        'Connect accounts and sync performance before SHIFT can recommend improvements.',
-        icon: Icons.auto_awesome_outlined),
-      Section('Recent activity',
-        action: TextButton(onPressed: () => context.push('/notifications'),
-          child: const Text('View all'))),
-      if (w.activity.isEmpty)
-        Text(connected
-          ? 'Recent local edits will appear here. Publishing jobs are in Calendar.'
-          : 'Your offline activity will appear here.'),
-      ...w.activity.take(4).map((a) => ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.history),
-        title: Text(a['title']!),
-        subtitle: Text(connected ? 'Current session' : 'Offline workspace'),
+      const Section('Your content plan', action: TextButton(onPressed: () => context.go('/calendar'),
+        child: const Text('Open calendar'))),
+      if (planned.isEmpty) const Empty('Your next post starts here',
+        'Create a draft or add a planning date. A local plan is not a confirmed publishing schedule.',
+        icon: Icons.calendar_today_outlined),
+      ...planned.take(3).map((p) => Padding(padding: const EdgeInsets.only(bottom: 9), child: PostTile(post: p))),
+      const Section('Recent activity', action: TextButton(onPressed: () => context.push('/notifications'),
+        child: const Text('View all'))),
+      if (w.activity.isEmpty) Text('Your recent workspace changes will appear here.',
+        style: Theme.of(context).textTheme.bodyMedium),
+      ...w.activity.take(4).map((a) => ListTile(contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.history_rounded), title: Text(a['title']!),
+        subtitle: Text(connected ? 'Current session' : 'On this device'),
         onTap: () => context.push(a['route']!))),
     ]);
   }
