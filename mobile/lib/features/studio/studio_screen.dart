@@ -339,8 +339,19 @@ class _StudioState extends ConsumerState<StudioScreen> with WidgetsBindingObserv
     if (missing) return const Empty('Draft not found', 'Return to the draft library and select an existing item.');
     final brandName = ref.watch(workspaceProvider).brand['name'] ?? 'Your brand';
     return PageBody(children: [
-      Heading(widget.postId == null ? 'What should SHIFT\ncreate today?' : 'Make it sound like you.', 'Write an original post, refine it, and keep every version.'),
-      ServiceNotice(text: workspace.cloudAuthenticated ? 'Cloud workspace • Drafts and images sync securely with SHIFT. AI output is always a reviewable draft.' : 'Offline workspace • Sign in to save online and use AI.'),
+      Heading(widget.postId == null ? 'Create with intention.' : 'Refine your post.', 'Shape the brief, build the draft, then review the final preview.'),
+      Panel(glass: true, padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12), child: Row(children: [
+        for (final step in const <(String, IconData)>[
+          ('01  Brief', Icons.edit_note_rounded), ('02  Draft', Icons.auto_awesome_rounded), ('03  Preview', Icons.visibility_outlined),
+        ]) Expanded(child: Row(children: [
+          Icon(step.$2, size: 17, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 5),
+          Flexible(child: Text(step.$1, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700))),
+        ])),
+      ])),
+      const SizedBox(height: 10),
+      ServiceNotice(text: workspace.cloudAuthenticated ? 'Your draft and supported media sync to SHIFT Cloud. AI output always remains reviewable before approval.' : 'Offline workspace • Drafts stay on this device. Sign in to use cloud AI and sync.'),
       if (widget.postId == null) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async {
         if (caption.text.trim().isNotEmpty) await save(quiet: true);
         if (!mounted) return;
