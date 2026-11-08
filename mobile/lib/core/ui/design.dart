@@ -4,42 +4,189 @@ import 'package:flutter/material.dart';
 
 ThemeData shiftTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final ink = dark ? const Color(0xFFF5F5F5) : const Color(0xFF101014);
-  final base = dark ? const Color(0xFF08080A) : const Color(0xFFF8F8F8);
-  final surface = dark ? const Color(0xFF18181B) : Colors.white;
-  final scheme = ColorScheme.fromSeed(seedColor: ink, brightness: brightness).copyWith(primary: ink, onPrimary: base, surface: surface, onSurface: ink, secondary: ink, onSecondary: base, primaryContainer: dark ? const Color(0xFF303034) : const Color(0xFFEAEAEA), onPrimaryContainer: ink);
-  return ThemeData(useMaterial3: true, brightness: brightness, colorScheme: scheme, scaffoldBackgroundColor: base,
-    appBarTheme: AppBarTheme(backgroundColor: base, foregroundColor: ink, elevation: 0, centerTitle: false),
-    inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ink.withValues(alpha: .15))), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ink.withValues(alpha: .15))), contentPadding: const EdgeInsets.all(16)),
-    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(48, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
-    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-    dividerTheme: DividerThemeData(color: ink.withValues(alpha: .1)),
-    textTheme: TextTheme(headlineLarge: TextStyle(fontSize: 34, height: 1.12, fontWeight: FontWeight.w800, letterSpacing: -1.3, color: ink), headlineSmall: TextStyle(fontSize: 23, fontWeight: FontWeight.w700, letterSpacing: -.5, color: ink), titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ink)),
-  );
+  const accent = Color(0xFF7777FF);
+  final ink = dark ? const Color(0xFFF4F4F7) : const Color(0xFF17171C);
+  final base = dark ? const Color(0xFF09090C) : const Color(0xFFF6F6F8);
+  final surface = dark ? const Color(0xFF15151A) : Colors.white;
+  final muted = dark ? const Color(0xFF9999A5) : const Color(0xFF777783);
+  final outline = ink.withValues(alpha: dark ? .10 : .075);
+  final scheme = ColorScheme.fromSeed(seedColor: accent, brightness: brightness).copyWith(
+    primary: dark ? const Color(0xFFB5B5FF) : const Color(0xFF5555D9),
+    onPrimary: Colors.white, secondary: accent, surface: surface, onSurface: ink,
+    surfaceContainerHighest: dark ? const Color(0xFF202027) : const Color(0xFFECECF1),
+    outline: outline, outlineVariant: outline);
+  final radius = BorderRadius.circular(16);
+  return ThemeData(useMaterial3: true, brightness: brightness, colorScheme: scheme,
+    scaffoldBackgroundColor: base,
+    appBarTheme: AppBarTheme(backgroundColor: base, foregroundColor: ink, elevation: 0,
+      scrolledUnderElevation: 0, centerTitle: false,
+      titleTextStyle: TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -.4)),
+    cardTheme: CardThemeData(color: surface, elevation: 0, margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: outline))),
+    inputDecorationTheme: InputDecorationTheme(filled: true,
+      fillColor: dark ? const Color(0xFF17171D) : const Color(0xFFF0F0F4),
+      hintStyle: TextStyle(color: muted), labelStyle: TextStyle(color: muted),
+      border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: outline)),
+      focusedBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: scheme.primary, width: 1.4)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15)),
+    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(48, 48),
+      elevation: 0, backgroundColor: scheme.primary, foregroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: const TextStyle(fontWeight: FontWeight.w700))),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size(46, 46),
+      foregroundColor: ink, side: BorderSide(color: outline),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: scheme.primary,
+      textStyle: const TextStyle(fontWeight: FontWeight.w700))),
+    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+      side: BorderSide(color: outline), labelStyle: TextStyle(color: ink)),
+    dividerTheme: DividerThemeData(color: outline, thickness: 1, space: 1),
+    snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+    dialogTheme: DialogThemeData(backgroundColor: surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
+    textTheme: TextTheme(
+      displayLarge: TextStyle(fontSize: 38, height: 1.05, fontWeight: FontWeight.w800, letterSpacing: -1.8, color: ink),
+      headlineLarge: TextStyle(fontSize: 30, height: 1.12, fontWeight: FontWeight.w800, letterSpacing: -1.15, color: ink),
+      headlineMedium: TextStyle(fontSize: 25, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -.7, color: ink),
+      headlineSmall: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, letterSpacing: -.5, color: ink),
+      titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: ink),
+      titleMedium: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: ink),
+      bodyLarge: TextStyle(fontSize: 14, height: 1.5, color: ink),
+      bodyMedium: TextStyle(fontSize: 13, height: 1.45, color: muted),
+      bodySmall: TextStyle(fontSize: 11, height: 1.4, color: muted),
+      labelLarge: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ink)));
 }
 class Panel extends StatelessWidget {
   const Panel({super.key, required this.child, this.glass = false, this.padding = const EdgeInsets.all(16)});
-  final Widget child;
-  final bool glass;
-  final EdgeInsets padding;
+  final Widget child; final bool glass; final EdgeInsets padding;
   @override Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final box = Container(width: double.infinity, padding: padding, decoration: BoxDecoration(color: theme.colorScheme.surface.withValues(alpha: glass ? .8 : 1), borderRadius: BorderRadius.circular(20), border: Border.all(color: theme.colorScheme.onSurface.withValues(alpha: .1))), child: child);
+    final theme = Theme.of(context); final dark = theme.brightness == Brightness.dark;
+    final radius = BorderRadius.circular(17);
+    final box = Container(width: double.infinity, padding: padding,
+      decoration: BoxDecoration(color: theme.colorScheme.surface.withValues(alpha: glass ? (dark ? .78 : .84) : 1),
+        borderRadius: radius, border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: .8)),
+        boxShadow: glass ? [BoxShadow(color: Colors.black.withValues(alpha: dark ? .12 : .025), blurRadius: 24, offset: const Offset(0, 8))] : null),
+      child: child);
     if (!glass) return box;
-    return ClipRRect(borderRadius: BorderRadius.circular(20), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: box));
+    return ClipRRect(borderRadius: radius, child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14), child: box));
   }
 }
 class PageBody extends StatelessWidget {
   const PageBody({super.key, required this.children});
   final List<Widget> children;
-  @override Widget build(BuildContext context) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 680), child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 28), children: children)));
+  @override Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Stack(clipBehavior: Clip.hardEdge, children: [
+      Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: dark
+            ? [const Color(0xFF09090D), const Color(0xFF10101A), const Color(0xFF09090D)]
+            : [const Color(0xFFF8F8FC), const Color(0xFFF0F0FA), const Color(0xFFF8F8FC)],
+        ),
+      ))),
+      Positioned(top: -118, right: -92, child: Container(
+        width: 270, height: 270,
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [
+            accent.withValues(alpha: dark ? .22 : .13),
+            accent.withValues(alpha: 0),
+          ]),
+        ),
+      )),
+      Positioned(top: 185, left: -118, child: Transform.rotate(
+        angle: .42,
+        child: Container(width: 190, height: 190,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(38),
+            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF38C8E8).withValues(alpha: dark ? .075 : .09),
+                const Color(0xFF7777FF).withValues(alpha: dark ? .045 : .06),
+              ]),
+            border: Border.all(color: accent.withValues(alpha: .07)),
+          ),
+        ),
+      )),
+      Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 32),
+          children: children,
+        ),
+      )),
+    ]);
+  }
 }
 class Heading extends StatelessWidget {
   const Heading(this.title, this.subtitle, {super.key});
   final String title, subtitle;
-  @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(context).textTheme.headlineLarge), const SizedBox(height: 8), Text(subtitle, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5))]));
+  @override Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 18),
+    child: GradientHero(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.headlineLarge),
+        const SizedBox(height: 8),
+        Text(subtitle, style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5)),
+      ],
+    )),
+  );
 }
+class GradientHero extends StatelessWidget {
+  const GradientHero({super.key, required this.child, this.padding = const EdgeInsets.all(18)});
+  final Widget child;
+  final EdgeInsets padding;
+  @override Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Stack(children: [
+        Container(
+          width: double.infinity,
+          padding: padding,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: dark
+                ? [const Color(0xFF202044), const Color(0xFF17172B), const Color(0xFF17171D)]
+                : [const Color(0xFFE9E9FF), const Color(0xFFF3F1FF), const Color(0xFFE9F8FC)],
+            ),
+            border: Border.all(color: primary.withValues(alpha: .16)),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: child,
+        ),
+        Positioned(right: -28, top: -38, child: Transform.rotate(
+          angle: .48,
+          child: Container(width: 128, height: 128,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(colors: [
+                const Color(0xFF39C8E8).withValues(alpha: .24),
+                primary.withValues(alpha: .14),
+              ]),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+            ),
+          ),
+        )),
+        Positioned(right: 42, bottom: -62, child: Container(
+          width: 118, height: 118,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFFFA45E).withValues(alpha: dark ? .08 : .12),
+          ),
+        )),
+      ]),
+    );
+  }
+}
+
 class Section extends StatelessWidget {
   const Section(this.title, {super.key, this.action});
   final String title;

@@ -82,11 +82,22 @@ class _DiscoverState extends ConsumerState<DiscoverScreen> {
     final w = ref.watch(workspaceProvider);
     final matches = w.bookmarks.where((b) => b.topic.toLowerCase().contains(query.text.toLowerCase())).toList();
     return PageBody(children: [
-      const Heading('Follow your curiosity.', 'Find an angle worth sharing. Keep the sources that matter.'),
-      OutlinedButton.icon(onPressed:()=>context.push('/ai-workspace'),
-        icon:const Icon(Icons.auto_awesome),label:const Text('Analyze with SHIFT AI')),
-      TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) research(); }, decoration: InputDecoration(labelText: 'Research a topic', hintText: 'What would you like to explore?', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(tooltip: 'Start research', onPressed: researching ? null : research, icon: const Icon(Icons.arrow_forward)))),
-      const SizedBox(height: 16),
+      const Heading('Find your next angle.', 'Explore ideas, research a topic, and keep the sources worth returning to.'),
+      Panel(glass: true, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('DISCOVER SOMETHING NEW', style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 12),
+        TextField(controller: query, onChanged: (_) => setState(() {}), onSubmitted: (v) { if (v.trim().isNotEmpty) research(); },
+          decoration: InputDecoration(labelText: 'What are you curious about?', hintText: 'Explore a topic, trend or audience…',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: IconButton(tooltip: 'Start research', onPressed: researching ? null : research, icon: const Icon(Icons.arrow_forward_rounded)))),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: Text('Research is saved to your workspace history.', style: Theme.of(context).textTheme.bodySmall)),
+          TextButton.icon(onPressed: () => context.push('/ai-workspace'),
+            icon: const Icon(Icons.auto_awesome_rounded, size: 17), label: const Text('SHIFT AI')),
+        ]),
+      ])),
+      const SizedBox(height: 10),
       ServiceNotice(text: w.cloudAuthenticated
         ? 'Online research uses verified workspace settings and brand context. Search results are not independently fact-checked.'
         : 'Offline workspace • Sign in to enable live research and cloud history.'),
