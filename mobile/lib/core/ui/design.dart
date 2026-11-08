@@ -124,8 +124,69 @@ class PageBody extends StatelessWidget {
 class Heading extends StatelessWidget {
   const Heading(this.title, this.subtitle, {super.key});
   final String title, subtitle;
-  @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(context).textTheme.headlineLarge), const SizedBox(height: 8), Text(subtitle, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5))]));
+  @override Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 18),
+    child: GradientHero(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.headlineLarge),
+        const SizedBox(height: 8),
+        Text(subtitle, style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5)),
+      ],
+    )),
+  );
 }
+class GradientHero extends StatelessWidget {
+  const GradientHero({super.key, required this.child, this.padding = const EdgeInsets.all(18)});
+  final Widget child;
+  final EdgeInsets padding;
+  @override Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Stack(children: [
+        Container(
+          width: double.infinity,
+          padding: padding,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: dark
+                ? [const Color(0xFF202044), const Color(0xFF17172B), const Color(0xFF17171D)]
+                : [const Color(0xFFE9E9FF), const Color(0xFFF3F1FF), const Color(0xFFE9F8FC)],
+            ),
+            border: Border.all(color: primary.withValues(alpha: .16)),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: child,
+        ),
+        Positioned(right: -28, top: -38, child: Transform.rotate(
+          angle: .48,
+          child: Container(width: 128, height: 128,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(colors: [
+                const Color(0xFF39C8E8).withValues(alpha: .24),
+                primary.withValues(alpha: .14),
+              ]),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+            ),
+          ),
+        )),
+        Positioned(right: 42, bottom: -62, child: Container(
+          width: 118, height: 118,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFFFA45E).withValues(alpha: dark ? .08 : .12),
+          ),
+        )),
+      ]),
+    );
+  }
+}
+
 class Section extends StatelessWidget {
   const Section(this.title, {super.key, this.action});
   final String title;
