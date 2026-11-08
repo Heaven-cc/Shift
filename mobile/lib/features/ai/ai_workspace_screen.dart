@@ -337,21 +337,33 @@ class _AiState extends ConsumerState<AiWorkspaceScreen>{
       actions:[IconButton(onPressed:loading?null:refresh,
         tooltip:'Refresh status',icon:const Icon(Icons.refresh))]),
       body:PageBody(children:[
-        const Heading('Research. Plan. Create.',
-          'AI uses your saved brand identity and requires approval for drafts.'),
+        const Heading('Meet your creative partner.',
+          'One SHIFT intelligence layer for research, strategy, ideas and content. Models are routed automatically; you stay in control of the result.'),
         if(!w.cloudAuthenticated)...[
           const Empty('Sign in required','Sign in to use secure AI and save research online.'),
           FilledButton(onPressed:()=>context.push('/auth'),child:const Text('Sign in')),
         ]else ...[
-          Panel(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text(configured?'SHIFT AI configured':'SHIFT AI unavailable',
-              style:Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height:6),
-            Text(configured?'Models are chosen automatically. A successful generation is required to confirm they work.':'An administrator needs to configure a working AI connection.'),
-            const SizedBox(height:6),
-            Text(research?'Live research available':
-              'Live research is not available right now.',
-              style:const TextStyle(fontSize:12)),
+          Panel(glass: true, child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Container(width:42,height:42,decoration:BoxDecoration(
+              color:Theme.of(context).colorScheme.primary.withValues(alpha:.12),
+              borderRadius:BorderRadius.circular(13)),
+              child:Icon(Icons.auto_awesome_rounded,
+                color:Theme.of(context).colorScheme.primary)),
+            const SizedBox(width:12),
+            Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Row(children:[
+                Expanded(child:Text(configured?'SHIFT AI is ready':'SHIFT AI needs setup',
+                  style:Theme.of(context).textTheme.titleMedium)),
+                Icon(configured?Icons.check_circle_rounded:Icons.info_outline_rounded,
+                  size:18,color:configured?Colors.green:Theme.of(context).colorScheme.onSurfaceVariant),
+              ]),
+              const SizedBox(height:5),
+              Text(configured?'Your configured models work together behind the scenes. SHIFT selects the best available route for each task.':'An administrator needs to configure an available AI connection.',
+                style:Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height:8),
+              Text(research?'Live research available':'Live research is not available right now.',
+                style:Theme.of(context).textTheme.labelSmall),
+            ])),
           ])),
           const Section('AI request'),
           DropdownButtonFormField<String>(
