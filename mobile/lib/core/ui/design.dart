@@ -76,7 +76,50 @@ class Panel extends StatelessWidget {
 class PageBody extends StatelessWidget {
   const PageBody({super.key, required this.children});
   final List<Widget> children;
-  @override Widget build(BuildContext context) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 680), child: ListView(padding: const EdgeInsets.fromLTRB(18, 14, 18, 32), children: children)));
+  @override Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Stack(clipBehavior: Clip.hardEdge, children: [
+      Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: dark
+            ? [const Color(0xFF09090D), const Color(0xFF10101A), const Color(0xFF09090D)]
+            : [const Color(0xFFF8F8FC), const Color(0xFFF0F0FA), const Color(0xFFF8F8FC)],
+        ),
+      ))),
+      Positioned(top: -118, right: -92, child: Container(
+        width: 270, height: 270,
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [
+            accent.withValues(alpha: dark ? .22 : .13),
+            accent.withValues(alpha: 0),
+          ]),
+        ),
+      )),
+      Positioned(top: 185, left: -118, child: Transform.rotate(
+        angle: .42,
+        child: Container(width: 190, height: 190,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(38),
+            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF38C8E8).withValues(alpha: dark ? .075 : .09),
+                const Color(0xFF7777FF).withValues(alpha: dark ? .045 : .06),
+              ]),
+            border: Border.all(color: accent.withValues(alpha: .07)),
+          ),
+        ),
+      )),
+      Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 32),
+          children: children,
+        ),
+      )),
+    ]);
+  }
 }
 class Heading extends StatelessWidget {
   const Heading(this.title, this.subtitle, {super.key});
